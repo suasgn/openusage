@@ -2,7 +2,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 use url::Url;
 
 use crate::account_store::AccountStore;
@@ -10,8 +10,8 @@ use crate::auth::{self, AuthState, PendingOAuth};
 use crate::error::{BackendError, Result};
 use crate::oauth;
 use crate::plugin_engine::manifest::{
-    AuthStrategyKind, AuthStrategyManifest, DeviceCodeConfig, LoadedPlugin, OAuthPkceConfig,
-    TokenRequestKind,
+    AuthStrategyKind, AuthStrategyManifest, BrowserCookieConfig, DeviceCodeConfig, LoadedPlugin,
+    OAuthPkceConfig, TokenRequestKind,
 };
 use crate::secrets;
 use crate::utils::now_unix_ms;
@@ -54,6 +54,8 @@ struct DeviceCodeResponse {
     expires_in: Option<i64>,
     interval: Option<u64>,
 }
+
+const BROWSER_COOKIE_POLL_INTERVAL_MS: u64 = 750;
 
 fn provider_error(message: impl Into<String>) -> BackendError {
     BackendError::Plugin(message.into())
@@ -158,7 +160,7 @@ pub fn ensure_account_matches_plugin(
 }
 
 pub async fn start_account_auth(
-    _app: AppHandle,
+    app: AppHandle,
     auth_state: State<'_, AuthState>,
     store: State<'_, AccountStore>,
     plugin: LoadedPlugin,
@@ -186,13 +188,82 @@ pub async fn start_account_auth(
             })?;
             start_device_flow(auth_state, &plugin, strategy, &account.id, config).await
         }
-        AuthStrategyKind::BrowserCookie => Err(provider_error(
-            "browser-cookie auth is not implemented in the generic account flow yet",
-        )),
+        AuthStrategyKind::BrowserCookie => {
+            let config = strategy.browser_cookie.as_ref().ok_or_else(|| {
+                provider_error(format!(
+                    "{} browser-cookie strategy is missing config",
+                    strategy.label
+                ))
+            })?;
+            start_browser_cookie_flow(app, auth_state, &plugin, strategy, &account.id, config)
+        }
         AuthStrategyKind::ApiKey | AuthStrategyKind::Json => Err(provider_error(
             "this account uses manual credentials; paste credentials instead",
         )),
     }
+}
+
+fn auth_window_label(request_id: &str) -> String {
+    format!("account-auth-{request_id}")
+}
+
+fn close_webview_window_if_exists(app: &AppHandle, label: &str) {
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.close();
+    }
+}
+
+fn sanitize_url_for_log(url: &Url) -> String {
+    let mut url = url.clone();
+    url.set_query(None);
+    url.set_fragment(None);
+    url.to_string()
+}
+
+fn start_browser_cookie_flow(
+    app: AppHandle,
+    auth_state: State<'_, AuthState>,
+    plugin: &LoadedPlugin,
+    strategy: &AuthStrategyManifest,
+    account_id: &str,
+    config: &BrowserCookieConfig,
+) -> Result<AccountAuthStartResponse> {
+    let login_url = Url::parse(&config.login_url)
+        .map_err(|err| provider_error(format!("browser login URL invalid: {err}")))?;
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let window_label = auth_window_label(&request_id);
+    close_webview_window_if_exists(&app, &window_label);
+
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        &window_label,
+        tauri::WebviewUrl::External(login_url.clone()),
+    )
+    .title(format!("{} Login", plugin.manifest.name))
+    .inner_size(1120.0, 760.0)
+    .resizable(true)
+    .incognito(true)
+    .build()
+    .map_err(|err| provider_error(format!("failed to open browser login window: {err}")))?;
+
+    let expires_at = now_unix_ms().saturating_add(180_000);
+    auth_state.insert(
+        request_id.clone(),
+        PendingOAuth::new_browser_cookie_flow(
+            plugin.manifest.id.clone(),
+            strategy.id.clone(),
+            account_id.to_string(),
+            window_label,
+            expires_at,
+        ),
+    );
+
+    Ok(AccountAuthStartResponse {
+        request_id,
+        url: login_url.to_string(),
+        redirect_uri: login_url.to_string(),
+        user_code: None,
+    })
 }
 
 fn start_pkce_flow(
@@ -377,6 +448,26 @@ pub async fn finish_account_auth(
             let token = poll_device_token(config, &flow, timeout).await?;
             persist_token_response(&app, store.inner(), &account.id, token)?
         }
+        "browserCookie" => {
+            let config = strategy.browser_cookie.as_ref().ok_or_else(|| {
+                provider_error(format!(
+                    "{} browser-cookie strategy is missing config",
+                    strategy.label
+                ))
+            })?;
+            finish_browser_cookie_flow(
+                &app,
+                store.inner(),
+                auth_state.inner(),
+                &plugin,
+                &account.id,
+                &request_id,
+                &flow,
+                config,
+                timeout,
+            )
+            .await?
+        }
         _ => return Err(provider_error("unsupported auth request kind")),
     };
 
@@ -385,6 +476,259 @@ pub async fn finish_account_auth(
         account_id: account.id,
         expires_at: result,
     })
+}
+
+async fn finish_browser_cookie_flow(
+    app: &AppHandle,
+    store: &AccountStore,
+    auth_state: &AuthState,
+    plugin: &LoadedPlugin,
+    account_id: &str,
+    request_id: &str,
+    flow: &PendingOAuth,
+    config: &BrowserCookieConfig,
+    timeout: Duration,
+) -> Result<i64> {
+    let window_label = flow
+        .device_code
+        .clone()
+        .ok_or_else(|| provider_error("browser auth window missing"))?;
+    let started_at = std::time::Instant::now();
+    let mut last_url_seen: Option<String> = None;
+    let mut current_url: Option<Url> = None;
+    let mut captured_completion_credentials: Option<serde_json::Map<String, serde_json::Value>> =
+        None;
+    let mut logged_cookie_without_completion = false;
+    let mut logged_completion_without_cookie = false;
+    let waits_for_completion_url = browser_cookie_has_completion_url_regex(config);
+
+    loop {
+        if flow.cancel_flag.load(Ordering::SeqCst) {
+            auth_state.remove(request_id);
+            close_webview_window_if_exists(app, &window_label);
+            return Err(provider_error("OAuth cancelled"));
+        }
+
+        if started_at.elapsed() >= timeout
+            || now_unix_ms() >= flow.device_expires_at.unwrap_or(i64::MAX)
+        {
+            flow.cancel_flag.store(true, Ordering::SeqCst);
+            auth_state.remove(request_id);
+            close_webview_window_if_exists(app, &window_label);
+            return Err(provider_error("OAuth timed out"));
+        }
+
+        let Some(window) = app.get_webview_window(&window_label) else {
+            auth_state.remove(request_id);
+            return Err(provider_error(format!(
+                "{} login window closed before session was captured",
+                plugin.manifest.name
+            )));
+        };
+
+        if let Ok(url) = window.url() {
+            let sanitized = sanitize_url_for_log(&url);
+            if last_url_seen.as_deref() != Some(sanitized.as_str()) {
+                log::info!(
+                    "[browser-cookie-auth:{}] navigation {}",
+                    plugin.manifest.id,
+                    sanitized
+                );
+                last_url_seen = Some(sanitized);
+            }
+            current_url = Some(url);
+        }
+
+        let cookie_header = browser_cookie_header_from_window(&window, config)?;
+        if captured_completion_credentials.is_none() {
+            captured_completion_credentials =
+                browser_cookie_completion_credentials(config, current_url.as_ref())?;
+        }
+        let completion_credentials = captured_completion_credentials.clone();
+
+        if cookie_header.is_some()
+            && completion_credentials.is_none()
+            && !logged_cookie_without_completion
+        {
+            log::info!(
+                "[browser-cookie-auth:{}] auth cookie detected, waiting for completion URL",
+                plugin.manifest.id
+            );
+            logged_cookie_without_completion = true;
+        }
+
+        if waits_for_completion_url
+            && completion_credentials.is_some()
+            && cookie_header.is_none()
+            && !logged_completion_without_cookie
+        {
+            log::info!(
+                "[browser-cookie-auth:{}] completion URL detected, waiting for auth cookie",
+                plugin.manifest.id
+            );
+            logged_completion_without_cookie = true;
+        }
+
+        if let (Some(cookie_header), Some(mut completion_credentials)) =
+            (cookie_header, completion_credentials)
+        {
+            let mut credentials = serde_json::Map::new();
+            credentials.insert(
+                "type".to_string(),
+                serde_json::Value::String(flow.strategy_id.clone()),
+            );
+            credentials.insert(
+                "cookieHeader".to_string(),
+                serde_json::Value::String(cookie_header),
+            );
+            credentials.append(&mut completion_credentials);
+            let credentials = serde_json::Value::Object(credentials);
+            secrets::set_account_credentials(app, store, account_id, &credentials)?;
+            auth_state.remove(request_id);
+            close_webview_window_if_exists(app, &window_label);
+            log::info!(
+                "[browser-cookie-auth:{}] session captured request_id={} account_id={}",
+                plugin.manifest.id,
+                request_id,
+                account_id
+            );
+            return Ok(0);
+        }
+
+        tokio::time::sleep(Duration::from_millis(BROWSER_COOKIE_POLL_INTERVAL_MS)).await;
+    }
+}
+
+fn browser_cookie_has_completion_url_regex(config: &BrowserCookieConfig) -> bool {
+    config
+        .completion_url_regex
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|pattern| !pattern.is_empty())
+}
+
+fn browser_cookie_completion_credentials(
+    config: &BrowserCookieConfig,
+    current_url: Option<&Url>,
+) -> Result<Option<serde_json::Map<String, serde_json::Value>>> {
+    let Some(pattern) = config
+        .completion_url_regex
+        .as_deref()
+        .map(str::trim)
+        .filter(|pattern| !pattern.is_empty())
+    else {
+        return Ok(Some(serde_json::Map::new()));
+    };
+
+    let Some(current_url) = current_url else {
+        return Ok(None);
+    };
+
+    let regex = regex_lite::Regex::new(pattern)
+        .map_err(|err| provider_error(format!("browser completion URL regex invalid: {err}")))?;
+    let Some(captures) = regex.captures(current_url.as_str()) else {
+        return Ok(None);
+    };
+
+    let mut credentials = serde_json::Map::new();
+    if let Some(name) = config
+        .completion_url_credential_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+    {
+        let value = captures
+            .get(1)
+            .map(|capture| capture.as_str().trim())
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                provider_error(format!(
+                    "browser completion URL regex matched but did not capture {name}"
+                ))
+            })?;
+        credentials.insert(
+            name.to_string(),
+            serde_json::Value::String(value.to_string()),
+        );
+    }
+
+    Ok(Some(credentials))
+}
+
+fn browser_cookie_header_from_window(
+    window: &WebviewWindow,
+    config: &BrowserCookieConfig,
+) -> Result<Option<String>> {
+    let mut urls = config.cookie_urls.clone();
+    if urls.is_empty() {
+        urls.push(config.login_url.clone());
+    }
+
+    for raw_url in urls {
+        let url = Url::parse(&raw_url)
+            .map_err(|err| provider_error(format!("browser cookie URL invalid: {err}")))?;
+        let cookies = window
+            .cookies_for_url(url)
+            .map_err(|err| provider_error(format!("failed to read browser cookies: {err}")))?;
+        let pairs = cookies
+            .into_iter()
+            .map(|cookie| (cookie.name().to_string(), cookie.value().to_string()))
+            .collect::<Vec<_>>();
+        if let Some(header) = browser_cookie_header_from_pairs(
+            pairs
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str())),
+            &config.required_cookie_names,
+            &config.required_any_cookie_names,
+        ) {
+            return Ok(Some(header));
+        }
+    }
+
+    Ok(None)
+}
+
+fn browser_cookie_header_from_pairs<'a>(
+    pairs: impl IntoIterator<Item = (&'a str, &'a str)>,
+    required_cookie_names: &[String],
+    required_any_cookie_names: &[String],
+) -> Option<String> {
+    let required_all = required_cookie_names
+        .iter()
+        .map(|name| name.trim())
+        .filter(|name| !name.is_empty())
+        .collect::<Vec<_>>();
+    let required_any = required_any_cookie_names
+        .iter()
+        .map(|name| name.trim())
+        .filter(|name| !name.is_empty())
+        .collect::<Vec<_>>();
+
+    let mut collected = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut names = std::collections::HashSet::new();
+
+    for (name, value) in pairs {
+        let name = name.trim();
+        let value = value.trim();
+        if name.is_empty() || value.is_empty() || !seen.insert(name.to_string()) {
+            continue;
+        }
+        names.insert(name.to_string());
+        collected.push(format!("{name}={value}"));
+    }
+
+    if collected.is_empty() {
+        return None;
+    }
+    if required_all.iter().any(|name| !names.contains(*name)) {
+        return None;
+    }
+    if !required_any.is_empty() && required_any.iter().all(|name| !names.contains(*name)) {
+        return None;
+    }
+
+    Some(collected.join("; "))
 }
 
 async fn exchange_code(
@@ -564,8 +908,23 @@ fn persist_token_response(
     Ok(expires_at)
 }
 
-pub fn cancel_account_auth(auth_state: State<'_, AuthState>, request_id: String) -> bool {
-    auth_state.cancel(&request_id)
+pub fn cancel_account_auth(
+    app: AppHandle,
+    auth_state: State<'_, AuthState>,
+    request_id: String,
+) -> bool {
+    let window_label = auth_state.get(&request_id).and_then(|flow| {
+        (flow.flow_kind == "browserCookie")
+            .then(|| flow.device_code.clone())
+            .flatten()
+    });
+    let cancelled = auth_state.cancel(&request_id);
+    if cancelled {
+        if let Some(label) = window_label {
+            close_webview_window_if_exists(&app, &label);
+        }
+    }
+    cancelled
 }
 
 #[cfg(test)]
@@ -639,6 +998,57 @@ mod tests {
         assert_eq!(
             redirect_uri.as_deref(),
             Some("http://localhost:1455/auth/callback")
+        );
+    }
+
+    #[test]
+    fn browser_cookie_header_requires_any_named_cookie() {
+        let required_any = vec!["auth".to_string(), "__Host-auth".to_string()];
+        assert!(
+            browser_cookie_header_from_pairs([("other", "value")], &[], &required_any,).is_none()
+        );
+
+        assert_eq!(
+            browser_cookie_header_from_pairs(
+                [("other", "value"), ("__Host-auth", "secret")],
+                &[],
+                &required_any,
+            )
+            .as_deref(),
+            Some("other=value; __Host-auth=secret")
+        );
+    }
+
+    #[test]
+    fn browser_cookie_completion_waits_for_matching_url_and_captures_credential() {
+        let config = BrowserCookieConfig {
+            login_url: "https://opencode.ai/auth".to_string(),
+            cookie_urls: Vec::new(),
+            required_cookie_names: Vec::new(),
+            required_any_cookie_names: Vec::new(),
+            completion_url_regex: Some(
+                r#"https://opencode\.ai/workspace/(wrk_[A-Za-z0-9]+)(?:[/#?]|$)"#.to_string(),
+            ),
+            completion_url_credential_name: Some("workspaceId".to_string()),
+        };
+        let auth_url = Url::parse("https://opencode.ai/auth").expect("auth url parses");
+        let workspace_url = Url::parse("https://opencode.ai/workspace/wrk_test123/billing")
+            .expect("workspace url parses");
+
+        assert!(
+            browser_cookie_completion_credentials(&config, Some(&auth_url))
+                .expect("completion check should not fail")
+                .is_none()
+        );
+
+        let credentials = browser_cookie_completion_credentials(&config, Some(&workspace_url))
+            .expect("completion check should not fail")
+            .expect("workspace URL should complete");
+        assert_eq!(
+            credentials
+                .get("workspaceId")
+                .and_then(|value| value.as_str()),
+            Some("wrk_test123")
         );
     }
 }

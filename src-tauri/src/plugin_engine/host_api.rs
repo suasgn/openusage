@@ -297,6 +297,15 @@ fn redact_value(value: &str) -> String {
     }
 }
 
+fn redact_workspace_ids(value: &str) -> String {
+    match regex_lite::Regex::new(r"wrk_[A-Za-z0-9]+") {
+        Ok(re) => re
+            .replace_all(value, |caps: &regex_lite::Captures| redact_value(&caps[0]))
+            .to_string(),
+        Err(_) => value.to_string(),
+    }
+}
+
 /// Redact sensitive query parameters in URL
 fn redact_url(url: &str) -> String {
     let sensitive_params = [
@@ -342,9 +351,9 @@ fn redact_url(url: &str) -> String {
                 }
             })
             .collect();
-        format!("{}{}", base, redacted_params.join("&"))
+        redact_workspace_ids(&format!("{}{}", base, redacted_params.join("&")))
     } else {
-        url.to_string()
+        redact_workspace_ids(url)
     }
 }
 
@@ -392,6 +401,9 @@ fn redact_body(body: &str) -> String {
         "sessionToken",
         "auth_token",
         "authToken",
+        "cookie",
+        "cookieHeader",
+        "cookie_header",
         "id_token",
         "idToken",
         "accessToken",
@@ -406,6 +418,8 @@ fn redact_body(body: &str) -> String {
         "paymentId",
         "profile_arn",
         "profileArn",
+        "workspace_id",
+        "workspaceId",
         "email",
         "login",
         "analytics_tracking_id",
@@ -429,7 +443,7 @@ fn redact_body(body: &str) -> String {
         result = path_re.replace_all(&result, "[PATH]").to_string();
     }
 
-    result
+    redact_workspace_ids(&result)
 }
 
 /// Lightweight redaction for log messages.
@@ -462,7 +476,7 @@ pub(crate) fn redact_log_message(msg: &str) -> String {
     {
         result = path_re.replace_all(&result, "[PATH]").to_string();
     }
-    result
+    redact_workspace_ids(&result)
 }
 
 pub(crate) fn decrypt_aes_256_gcm_envelope(
@@ -3135,6 +3149,33 @@ mod tests {
         assert!(
             redacted.contains("arn:...QMUK"),
             "profile arn should use first4...last4 redaction, got: {}",
+            redacted
+        );
+    }
+
+    #[test]
+    fn redact_body_redacts_cookie_and_workspace_fields() {
+        let body = r#"{"cookieHeader":"auth=secret_session_value_1234567890","workspaceId":"wrk_abcdefghijklmnopqrstuvwxyz"}"#;
+        let redacted = redact_body(body);
+        assert!(
+            !redacted.contains("secret_session_value_1234567890"),
+            "cookieHeader should be redacted, got: {}",
+            redacted
+        );
+        assert!(
+            !redacted.contains("wrk_abcdefghijklmnopqrstuvwxyz"),
+            "workspace id should be redacted, got: {}",
+            redacted
+        );
+    }
+
+    #[test]
+    fn redact_url_redacts_workspace_ids_in_path() {
+        let redacted =
+            redact_url("https://opencode.ai/workspace/wrk_abcdefghijklmnopqrstuvwxyz/go");
+        assert!(
+            !redacted.contains("wrk_abcdefghijklmnopqrstuvwxyz"),
+            "workspace id should be redacted from URL, got: {}",
             redacted
         );
     }

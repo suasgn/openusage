@@ -942,8 +942,12 @@ async fn finish_account_auth(
 }
 
 #[tauri::command]
-fn cancel_account_auth(auth_state: tauri::State<'_, auth::AuthState>, request_id: String) -> bool {
-    account_auth::cancel_account_auth(auth_state, request_id)
+fn cancel_account_auth(
+    app: tauri::AppHandle,
+    auth_state: tauri::State<'_, auth::AuthState>,
+    request_id: String,
+) -> bool {
+    account_auth::cancel_account_auth(app, auth_state, request_id)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

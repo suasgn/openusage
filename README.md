@@ -37,7 +37,7 @@ OpenUsage lives in your menu bar and shows you how much of your AI coding subscr
 - [**Kiro**](docs/providers/kiro.md) / credits, bonus credits, overages
 - [**Kimi Code**](docs/providers/kimi.md) / session, weekly
 - [**MiniMax**](docs/providers/minimax.md) / coding plan session
-- [**OpenCode Go**](docs/providers/opencode-go.md) / 5h, weekly, monthly spend limits
+- [**OpenCode**](docs/providers/opencode.md) / session, weekly, monthly cost, Go usage
 - [**OpenRouter**](docs/providers/openrouter.md) / credits, key quota, rate limit
 - [**Warp**](docs/providers/warp.md) / credits, add-on credits
 - [**Windsurf**](docs/providers/windsurf.md) / prompt credits, flex credits

@@ -319,13 +319,13 @@ export function AccountSettingsSection({
     showToast("success", `${plugin.name} credentials saved`)
   }
 
-  const startAuth = async (plugin: SettingsPluginState, account: AccountRecord) => {
+  const startAuth = async (plugin: SettingsPluginState, account: AccountRecord, strategy: AuthStrategy) => {
     const started = await startAccountAuth(plugin.id, account.id)
     setSessionById((previous) => ({
       ...previous,
       [account.id]: { requestId: started.requestId, url: started.url, userCode: started.userCode, status: "pending" },
     }))
-    if (started.url) openUrl(started.url).catch(console.error)
+    if (started.url && strategy.kind !== "browserCookie") openUrl(started.url).catch(console.error)
     finishAccountAuth(started.requestId, 180_000)
       .then(async () => {
         setSessionById((previous) => ({ ...previous, [account.id]: undefined }))
@@ -636,8 +636,8 @@ export function AccountSettingsSection({
 
                                     {isAuthFlow(strategy) ? (
                                       <div className="flex flex-wrap items-center gap-1">
-                                        <Button type="button" size="xs" variant={session?.status === "error" ? "destructive" : "outline"} disabled={busy !== null || session?.status === "pending"} onClick={() => run(`auth:${account.id}`, () => startAuth(plugin, account))}>
-                                          {session?.status === "error" ? "Retry OAuth" : "Connect OAuth"}
+                                        <Button type="button" size="xs" variant={session?.status === "error" ? "destructive" : "outline"} disabled={busy !== null || session?.status === "pending"} onClick={() => run(`auth:${account.id}`, () => startAuth(plugin, account, strategy))}>
+                                          {session?.status === "error" ? "Retry auth" : strategy.kind === "browserCookie" ? "Connect in browser" : "Connect OAuth"}
                                         </Button>
                                         {session?.status === "pending" && (
                                           <Button type="button" size="xs" variant="outline" disabled={busy !== null} onClick={() => run(`cancel:${account.id}`, async () => {
@@ -645,7 +645,7 @@ export function AccountSettingsSection({
                                             setSessionById((previous) => ({ ...previous, [account.id]: undefined }))
                                             showToast("success", `${plugin.name} auth cancelled`)
                                           })}>
-                                            Cancel OAuth
+                                            Cancel auth
                                           </Button>
                                         )}
                                       </div>
@@ -697,7 +697,7 @@ export function AccountSettingsSection({
 
                                     {isAuthFlow(strategy) && session?.url && (
                                       <div className="rounded-md border border-dashed p-2 text-xs">
-                                        <p className="font-medium text-foreground">{session.status === "pending" ? "OAuth in progress" : "OAuth status"}</p>
+                                         <p className="font-medium text-foreground">{session.status === "pending" ? "Auth in progress" : "Auth status"}</p>
                                         {session.userCode && <p className="mt-1 text-muted-foreground">Enter code: <span className="font-mono">{session.userCode}</span></p>}
                                         <p className="mt-1 break-all text-muted-foreground">{session.url}</p>
                                         <div className="mt-1 flex items-center gap-1">

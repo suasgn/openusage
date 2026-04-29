@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "id": "opencode",
+  "name": "OpenCode",
+  "version": "0.0.1",
+  "entry": "plugin.js",
+  "icon": "icon.svg",
+  "brandColor": "#211E1E",
+  "auth": {
+    "defaultStrategyId": "cookie",
+    "strategies": [
+      {
+        "id": "cookie",
+        "label": "Cookie Login",
+        "kind": "browserCookie",
+        "credentialTemplate": { "type": "cookie", "cookieHeader": "", "workspaceId": "" },
+        "browserCookie": {
+          "loginUrl": "https://opencode.ai/auth",
+          "cookieUrls": [
+            "https://opencode.ai/_server",
+            "https://opencode.ai/workspace/",
+            "https://opencode.ai/auth"
+          ],
+          "requiredAnyCookieNames": ["auth", "__Host-auth"],
+          "completionUrlRegex": "https://opencode\\.ai/workspace/(wrk_[A-Za-z0-9]+)(?:[/#?]|$)",
+          "completionUrlCredentialName": "workspaceId"
+        }
+      },
+      {
+        "id": "manualCookie",
+        "label": "Manual Cookie",
+        "kind": "json",
+        "fields": [
+          { "name": "cookieHeader", "label": "Cookie Header", "fieldType": "textarea", "secret": true, "required": true },
+          { "name": "workspaceId", "label": "Workspace ID", "fieldType": "text", "placeholder": "wrk_...", "advanced": true }
+        ],
+        "credentialTemplate": { "type": "manualCookie", "cookieHeader": "", "workspaceId": "" }
+      }
+    ]
+  },
+  "links": [
+    { "label": "Console", "url": "https://opencode.ai/auth" },
+    { "label": "Docs", "url": "https://opencode.ai/docs/" }
+  ],
+  "lines": [
+    { "type": "progress", "label": "Session", "scope": "overview", "primaryOrder": 1 },
+    { "type": "progress", "label": "Weekly", "scope": "overview" },
+    { "type": "text", "label": "Monthly Cost", "scope": "overview" },
+    { "type": "progress", "label": "Go Session", "scope": "overview", "primaryOrder": 2 },
+    { "type": "progress", "label": "Go Weekly", "scope": "overview" },
+    { "type": "progress", "label": "Go Monthly", "scope": "overview" },
+    { "type": "badge", "label": "Subscription Rows", "scope": "detail" }
+  ]
+}

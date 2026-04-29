@@ -266,6 +266,12 @@ pub struct BrowserCookieConfig {
     pub cookie_urls: Vec<String>,
     #[serde(default)]
     pub required_cookie_names: Vec<String>,
+    #[serde(default)]
+    pub required_any_cookie_names: Vec<String>,
+    #[serde(default)]
+    pub completion_url_regex: Option<String>,
+    #[serde(default)]
+    pub completion_url_credential_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

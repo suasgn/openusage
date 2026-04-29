@@ -114,6 +114,25 @@ Supported `fieldType` values:
 | `segmented` | segmented buttons   | Requires `options`; default when `options` are present |
 | `checkbox`  | checkbox            | Saves a boolean |
 
+### Browser Cookie Auth (Optional)
+
+`browserCookie` strategies open an internal browser window and persist cookies once the configured conditions match.
+
+```json
+{
+  "kind": "browserCookie",
+  "browserCookie": {
+    "loginUrl": "https://example.com/auth",
+    "cookieUrls": ["https://example.com/"],
+    "requiredAnyCookieNames": ["auth", "__Host-auth"],
+    "completionUrlRegex": "https://example\\.com/workspace/(wrk_[A-Za-z0-9]+)(?:[/#?]|$)",
+    "completionUrlCredentialName": "workspaceId"
+  }
+}
+```
+
+`completionUrlRegex` is optional. When set, capture waits until the browser URL matches. If `completionUrlCredentialName` is also set, the first regex capture group is saved into credentials under that field name.
+
 ## Output Shape Declaration
 
 Plugins must declare their output shape in `plugin.json`. This enables the UI to render

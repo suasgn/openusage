@@ -82,6 +82,28 @@ impl PendingOAuth {
         }
     }
 
+    pub fn new_browser_cookie_flow(
+        plugin_id: String,
+        strategy_id: String,
+        account_id: String,
+        window_label: String,
+        expires_at: i64,
+    ) -> Self {
+        Self {
+            plugin_id,
+            strategy_id,
+            flow_kind: "browserCookie".to_string(),
+            account_id,
+            verifier: String::new(),
+            redirect_uri: String::new(),
+            device_code: Some(window_label),
+            device_interval: Some(1),
+            device_expires_at: Some(expires_at),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+            receiver: Mutex::new(None),
+        }
+    }
+
     pub fn take_receiver(&self) -> Option<oneshot::Receiver<Result<OAuthCallback>>> {
         let mut receiver = self.receiver.lock().expect("oauth receiver mutex poisoned");
         receiver.take()
