@@ -55,6 +55,22 @@
       }
     ]
   },
+  "externalAuth": {
+    "opencode": {
+      "authKey": "zai-coding-plan",
+      "strategies": {
+        "apiKey": {
+          "type": "api",
+          "fields": {
+            "key": "/apiKey"
+          }
+        }
+      },
+      "rotation": {
+        "lineLabels": ["Session", "Weekly"]
+      }
+    }
+  },
   "lines": [
     { "type": "progress", "label": "Session", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Weekly", "scope": "overview" },

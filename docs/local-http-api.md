@@ -1,6 +1,6 @@
 # Local HTTP API
 
-OpenUsage exposes a read-only HTTP API on the loopback interface so other local apps can consume the same usage data shown in the menu bar.
+OpenUsage exposes a local HTTP API on the loopback interface so other local apps can read usage data and trigger supported local actions.
 
 **Base URL:** `http://127.0.0.1:6736`
 
@@ -22,9 +22,27 @@ Returns a single cached usage snapshot for the given provider.
 - **204 No Content** — Provider is known but has no cached snapshot yet.
 - **404 Not Found** — Provider ID is unknown.
 
+### `POST /v1/external-auth/opencode/sync`
+
+Syncs one OpenUsage account into OpenCode's `auth.json`.
+
+```json
+{ "accountId": "..." }
+```
+
+### `POST /v1/external-auth/opencode/rotate`
+
+Rotates OpenCode auth to the enabled account with the most cached usage left for a plugin.
+
+```json
+{ "pluginId": "codex" }
+```
+
+Use `zai` for Z.ai. See [OpenCode Auth Rotation](opencode-auth-rotation.md).
+
 ### Unsupported methods
 
-Any method other than `GET` or `OPTIONS` on the above routes returns **405 Method Not Allowed**.
+Any method other than the listed method or `OPTIONS` on the above routes returns **405 Method Not Allowed**.
 
 Unknown routes return **404 Not Found**.
 
@@ -76,7 +94,7 @@ All responses include permissive CORS headers:
 
 ```
 Access-Control-Allow-Origin: *
-Access-Control-Allow-Methods: GET, OPTIONS
+Access-Control-Allow-Methods: GET, POST, OPTIONS
 Access-Control-Allow-Headers: Content-Type
 ```
 
@@ -92,4 +110,4 @@ Error responses use this shape:
 }
 ```
 
-Possible error codes: `provider_not_found`, `not_found`, `method_not_allowed`.
+Possible error codes: `provider_not_found`, `account_not_found`, `bad_request`, `request_failed`, `app_unavailable`, `not_found`, `method_not_allowed`.

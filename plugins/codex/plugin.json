@@ -69,6 +69,25 @@
       }
     ]
   },
+  "externalAuth": {
+    "opencode": {
+      "authKey": "openai",
+      "strategies": {
+        "oauth": {
+          "type": "oauth",
+          "fields": {
+            "access": "/accessToken",
+            "refresh": "/refreshToken",
+            "expires": "/expiresAt",
+            "accountId": "/accountId"
+          }
+        }
+      },
+      "rotation": {
+        "lineLabels": ["Session", "Weekly"]
+      }
+    }
+  },
   "links": [
     { "label": "Status", "url": "https://status.openai.com/" },
     { "label": "Usage dashboard", "url": "https://platform.openai.com/usage" }

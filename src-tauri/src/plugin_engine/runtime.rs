@@ -534,6 +534,7 @@ mod tests {
                 lines: vec![],
                 links: vec![],
                 auth: None,
+                external_auth: None,
             },
             plugin_dir: PathBuf::from("."),
             entry_script: entry_script.to_string(),

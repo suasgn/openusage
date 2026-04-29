@@ -35,6 +35,14 @@ export type AccountAuthStartResponse = {
   userCode?: string | null
 }
 
+export type ExternalAuthSyncResult = {
+  pluginId: string
+  accountId: string
+  accountLabel: string
+  authFilePath: string
+  remainingPercent?: number | null
+}
+
 export function listAccounts(): Promise<AccountRecord[]> {
   return invoke<AccountRecord[]>("list_accounts")
 }
@@ -64,6 +72,10 @@ export function setAccountCredentials(
 
 export function clearAccountCredentials(accountId: string): Promise<void> {
   return invoke("clear_account_credentials", { accountId })
+}
+
+export function syncAccountToOpencodeAuth(accountId: string): Promise<ExternalAuthSyncResult> {
+  return invoke<ExternalAuthSyncResult>("sync_account_to_opencode_auth", { accountId })
 }
 
 export function startAccountAuth(pluginId: string, accountId: string): Promise<AccountAuthStartResponse> {

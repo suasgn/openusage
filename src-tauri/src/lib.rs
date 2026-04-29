@@ -6,9 +6,11 @@ mod app_nap;
 mod auth;
 mod config;
 mod error;
+mod external_auth;
 mod local_http_api;
 mod models;
 mod oauth;
+mod opencode_auth_file;
 mod panel;
 mod plugin_engine;
 mod secrets;
@@ -157,9 +159,22 @@ pub struct PluginMeta {
     pub lines: Vec<ManifestLineDto>,
     pub links: Vec<PluginLinkDto>,
     pub auth: Option<PluginAuthDto>,
+    pub external_auth: Option<PluginExternalAuthDto>,
     /// Ordered list of primary metric candidates (sorted by primaryOrder).
     /// Frontend picks the first one that exists in runtime data.
     pub primary_candidates: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginExternalAuthDto {
+    pub opencode: Option<PluginOpenCodeExternalAuthDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginOpenCodeExternalAuthDto {
+    pub strategy_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -747,6 +762,20 @@ fn list_plugins(state: tauri::State<'_, Mutex<AppState>>) -> Vec<PluginMeta> {
                     .collect(),
             });
 
+            let external_auth =
+                plugin
+                    .manifest
+                    .external_auth
+                    .as_ref()
+                    .map(|external| PluginExternalAuthDto {
+                        opencode: external.opencode.as_ref().map(|opencode| {
+                            let mut strategy_ids =
+                                opencode.strategies.keys().cloned().collect::<Vec<_>>();
+                            strategy_ids.sort();
+                            PluginOpenCodeExternalAuthDto { strategy_ids }
+                        }),
+                    });
+
             PluginMeta {
                 id: plugin.manifest.id,
                 name: plugin.manifest.name,
@@ -772,6 +801,7 @@ fn list_plugins(state: tauri::State<'_, Mutex<AppState>>) -> Vec<PluginMeta> {
                     })
                     .collect(),
                 auth,
+                external_auth,
                 primary_candidates,
             }
         })
@@ -908,6 +938,17 @@ fn clear_account_credentials(
 }
 
 #[tauri::command]
+fn sync_account_to_opencode_auth(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
+    store: tauri::State<'_, account_store::AccountStore>,
+    account_id: String,
+) -> Result<external_auth::ExternalAuthSyncResult, String> {
+    external_auth::sync_opencode_account(&app, state.inner(), store.inner(), &account_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 async fn start_account_auth(
     app: tauri::AppHandle,
     auth_state: tauri::State<'_, auth::AuthState>,
@@ -991,6 +1032,7 @@ pub fn run() {
             set_account_credentials,
             has_account_credentials,
             clear_account_credentials,
+            sync_account_to_opencode_auth,
             start_account_auth,
             finish_account_auth,
             cancel_account_auth,
@@ -1045,7 +1087,7 @@ pub fn run() {
             app.manage(auth::AuthState::new());
 
             local_http_api::init(&app_data_dir, known_plugin_ids);
-            local_http_api::start_server();
+            local_http_api::start_server(app.handle().clone());
 
             tray::create(app.handle())?;
 

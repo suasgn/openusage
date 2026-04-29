@@ -1,15 +1,24 @@
 use super::cache::{cache_state, enabled_snapshots_ordered};
+use crate::AppState;
+use crate::account_store::AccountStore;
+use crate::error::BackendError;
+use crate::external_auth;
+use serde::Deserialize;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::Mutex;
+use tauri::Manager;
 
 const BIND_ADDR: &str = "127.0.0.1:6736";
+const OPENCODE_SYNC_PATH: &str = "/v1/external-auth/opencode/sync";
+const OPENCODE_ROTATE_PATH: &str = "/v1/external-auth/opencode/rotate";
 
 // ---------------------------------------------------------------------------
 // HTTP server
 // ---------------------------------------------------------------------------
 
-pub fn start_server() {
-    std::thread::spawn(|| {
+pub fn start_server(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
         let listener = match TcpListener::bind(BIND_ADDR) {
             Ok(l) => {
                 log::info!("local HTTP API listening on {}", BIND_ADDR);
@@ -28,7 +37,8 @@ pub fn start_server() {
         for stream in listener.incoming() {
             match stream {
                 Ok(stream) => {
-                    std::thread::spawn(move || handle_connection(stream));
+                    let app = app.clone();
+                    std::thread::spawn(move || handle_connection(stream, app));
                 }
                 Err(e) => log::debug!("local HTTP API accept error: {}", e),
             }
@@ -36,7 +46,7 @@ pub fn start_server() {
     });
 }
 
-fn handle_connection(mut stream: TcpStream) {
+fn handle_connection(mut stream: TcpStream, app: tauri::AppHandle) {
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
 
     // Read request (up to 4 KB is plenty for a request line + headers)
@@ -61,16 +71,33 @@ fn handle_connection(mut stream: TcpStream) {
         path
     };
 
-    let response = route(method, path);
+    let body = request.split("\r\n\r\n").nth(1).unwrap_or("");
+    let response = route(method, path, body, Some(&app));
     let _ = stream.write_all(response.as_bytes());
     let _ = stream.flush();
 }
 
-fn route(method: &str, path: &str) -> String {
+fn route(method: &str, path: &str, body: &str, app: Option<&tauri::AppHandle>) -> String {
     // Match routes
     if path == "/v1/usage" {
         return match method {
             "GET" => handle_get_usage_collection(),
+            "OPTIONS" => response_no_content(),
+            _ => response_method_not_allowed(),
+        };
+    }
+
+    if path == OPENCODE_SYNC_PATH {
+        return match method {
+            "POST" => handle_sync_opencode_auth(body, app),
+            "OPTIONS" => response_no_content(),
+            _ => response_method_not_allowed(),
+        };
+    }
+
+    if path == OPENCODE_ROTATE_PATH {
+        return match method {
+            "POST" => handle_rotate_opencode_auth(body, app),
             "OPTIONS" => response_no_content(),
             _ => response_method_not_allowed(),
         };
@@ -87,6 +114,62 @@ fn route(method: &str, path: &str) -> String {
     }
 
     response_not_found("not_found")
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SyncOpenCodeAuthRequest {
+    account_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RotateOpenCodeAuthRequest {
+    plugin_id: String,
+}
+
+fn handle_sync_opencode_auth(body: &str, app: Option<&tauri::AppHandle>) -> String {
+    let request = match serde_json::from_str::<SyncOpenCodeAuthRequest>(body) {
+        Ok(request) if !request.account_id.trim().is_empty() => request,
+        Ok(_) => return response_bad_request("accountId is required"),
+        Err(err) => return response_bad_request(format!("invalid JSON body: {err}")),
+    };
+    let Some(app) = app else {
+        return response_service_unavailable("app_unavailable");
+    };
+    let state = app.state::<Mutex<AppState>>();
+    let store = app.state::<AccountStore>();
+    match external_auth::sync_opencode_account(
+        app,
+        state.inner(),
+        store.inner(),
+        &request.account_id,
+    ) {
+        Ok(result) => response_json_value(200, "OK", &result),
+        Err(err) => response_backend_error(err),
+    }
+}
+
+fn handle_rotate_opencode_auth(body: &str, app: Option<&tauri::AppHandle>) -> String {
+    let request = match serde_json::from_str::<RotateOpenCodeAuthRequest>(body) {
+        Ok(request) if !request.plugin_id.trim().is_empty() => request,
+        Ok(_) => return response_bad_request("pluginId is required"),
+        Err(err) => return response_bad_request(format!("invalid JSON body: {err}")),
+    };
+    let Some(app) = app else {
+        return response_service_unavailable("app_unavailable");
+    };
+    let state = app.state::<Mutex<AppState>>();
+    let store = app.state::<AccountStore>();
+    match external_auth::rotate_opencode_plugin(
+        app,
+        state.inner(),
+        store.inner(),
+        &request.plugin_id,
+    ) {
+        Ok(result) => response_json_value(200, "OK", &result),
+        Err(err) => response_backend_error(err),
+    }
 }
 
 fn handle_get_usage_collection() -> String {
@@ -122,8 +205,13 @@ fn handle_get_usage_single(provider_id: &str) -> String {
 
 const CORS_HEADERS: &str = "\
 Access-Control-Allow-Origin: *\r\n\
-Access-Control-Allow-Methods: GET, OPTIONS\r\n\
+Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n\
 Access-Control-Allow-Headers: Content-Type";
+
+fn response_json_value<T: serde::Serialize>(status: u16, reason: &str, value: &T) -> String {
+    let body = serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string());
+    response_json(status, reason, &body)
+}
 
 fn response_json(status: u16, reason: &str, body: &str) -> String {
     format!(
@@ -131,7 +219,7 @@ fn response_json(status: u16, reason: &str, body: &str) -> String {
         status,
         reason,
         CORS_HEADERS,
-        body.len(),
+        body.as_bytes().len(),
         body,
     )
 }
@@ -146,6 +234,42 @@ fn response_no_content() -> String {
 fn response_not_found(error_code: &str) -> String {
     let body = format!(r#"{{"error":"{}"}}"#, error_code);
     response_json(404, "Not Found", &body)
+}
+
+fn response_bad_request(message: impl Into<String>) -> String {
+    response_error_json(400, "Bad Request", "bad_request", message)
+}
+
+fn response_service_unavailable(error_code: &str) -> String {
+    let body = serde_json::json!({ "error": error_code }).to_string();
+    response_json(503, "Service Unavailable", &body)
+}
+
+fn response_backend_error(err: BackendError) -> String {
+    match err {
+        BackendError::AccountNotFound => {
+            response_error_json(404, "Not Found", "account_not_found", "account not found")
+        }
+        BackendError::Validation(message) | BackendError::Plugin(message) => {
+            response_error_json(400, "Bad Request", "request_failed", message)
+        }
+        other => response_error_json(
+            500,
+            "Internal Server Error",
+            "request_failed",
+            other.to_string(),
+        ),
+    }
+}
+
+fn response_error_json(
+    status: u16,
+    reason: &str,
+    error_code: &str,
+    message: impl Into<String>,
+) -> String {
+    let body = serde_json::json!({ "error": error_code, "message": message.into() }).to_string();
+    response_json(status, reason, &body)
 }
 
 fn response_method_not_allowed() -> String {
@@ -169,29 +293,52 @@ mod tests {
         }
     }
 
+    fn route_test(method: &str, path: &str) -> String {
+        route(method, path, "", None)
+    }
+
     #[test]
     fn route_get_usage_returns_200() {
-        let resp = route("GET", "/v1/usage");
+        let resp = route_test("GET", "/v1/usage");
         assert!(resp.starts_with("HTTP/1.1 200"));
     }
 
     #[test]
     fn route_unknown_path_returns_404() {
-        let resp = route("GET", "/v2/something");
+        let resp = route_test("GET", "/v2/something");
         assert!(resp.starts_with("HTTP/1.1 404"));
     }
 
     #[test]
     fn route_post_returns_405() {
-        let resp = route("POST", "/v1/usage");
+        let resp = route_test("POST", "/v1/usage");
         assert!(resp.starts_with("HTTP/1.1 405"));
     }
 
     #[test]
     fn route_options_returns_204_with_cors() {
-        let resp = route("OPTIONS", "/v1/usage");
+        let resp = route_test("OPTIONS", "/v1/usage");
         assert!(resp.starts_with("HTTP/1.1 204"));
         assert!(resp.contains("Access-Control-Allow-Origin: *"));
+    }
+
+    #[test]
+    fn route_opencode_sync_requires_json_body() {
+        let resp = route("POST", OPENCODE_SYNC_PATH, "not-json", None);
+        assert!(resp.starts_with("HTTP/1.1 400"));
+        assert!(resp.contains("bad_request"));
+    }
+
+    #[test]
+    fn route_opencode_rotate_requires_app_state_after_valid_body() {
+        let resp = route(
+            "POST",
+            OPENCODE_ROTATE_PATH,
+            r#"{"pluginId":"codex"}"#,
+            None,
+        );
+        assert!(resp.starts_with("HTTP/1.1 503"));
+        assert!(resp.contains("app_unavailable"));
     }
 
     #[test]
@@ -203,7 +350,7 @@ mod tests {
             state.snapshots.clear();
         }
 
-        let resp = route("GET", "/v1/usage/nonexistent");
+        let resp = route_test("GET", "/v1/usage/nonexistent");
         assert!(resp.starts_with("HTTP/1.1 404"));
         assert!(resp.contains("provider_not_found"));
     }
@@ -217,7 +364,7 @@ mod tests {
             state.snapshots.clear();
         }
 
-        let resp = route("GET", "/v1/usage/claude");
+        let resp = route_test("GET", "/v1/usage/claude");
         assert!(resp.starts_with("HTTP/1.1 204"));
     }
 
@@ -232,16 +379,16 @@ mod tests {
                 .insert("claude".to_string(), make_snapshot("claude", "Claude"));
         }
 
-        let resp = route("GET", "/v1/usage/claude");
+        let resp = route_test("GET", "/v1/usage/claude");
         assert!(resp.starts_with("HTTP/1.1 200"));
         assert!(resp.contains("fetchedAt"));
     }
 
     #[test]
     fn route_options_on_provider_returns_204() {
-        let resp = route("OPTIONS", "/v1/usage/claude");
+        let resp = route_test("OPTIONS", "/v1/usage/claude");
         assert!(resp.starts_with("HTTP/1.1 204"));
-        assert!(resp.contains("Access-Control-Allow-Methods: GET, OPTIONS"));
+        assert!(resp.contains("Access-Control-Allow-Methods: GET, POST, OPTIONS"));
     }
 
     #[test]

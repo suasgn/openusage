@@ -39,6 +39,7 @@ import {
   listAccounts,
   setAccountCredentials,
   startAccountAuth,
+  syncAccountToOpencodeAuth,
   updateAccount,
   type AccountRecord,
 } from "@/lib/accounts"
@@ -100,6 +101,11 @@ function isAuthFlow(strategy: AuthStrategy): boolean {
 
 function usesFieldCredentialForm(strategy: AuthStrategy): boolean {
   return !isAuthFlow(strategy) && strategy.fields.length > 0
+}
+
+function supportsOpenCodeAuthSync(plugin: SettingsPluginState, strategy: AuthStrategy | null): boolean {
+  if (!strategy) return false
+  return Boolean(plugin.externalAuth?.opencode?.strategyIds.includes(strategy.id))
 }
 
 type FieldDraftByAccount = Record<string, Record<string, string>>
@@ -567,6 +573,9 @@ export function AccountSettingsSection({
                         const accountExpanded = expandedById[account.id] === true
                         const labelValue = labelDraftById[account.id] ?? account.label
                         const usesCredentialFields = strategy ? usesFieldCredentialForm(strategy) : false
+                        const canSyncOpenCodeAuth = Boolean(
+                          credentialsById[account.id] && supportsOpenCodeAuthSync(plugin, strategy)
+                        )
                         const primaryCredentialFields = strategy?.fields.filter((field) => !field.advanced) ?? []
                         const advancedCredentialFields = strategy?.fields.filter((field) => field.advanced) ?? []
                         return (
@@ -691,6 +700,14 @@ export function AccountSettingsSection({
                                           showToast("success", `${plugin.name} credentials cleared`)
                                         })}>
                                           Clear credentials
+                                        </Button>
+                                      )}
+                                      {canSyncOpenCodeAuth && (
+                                        <Button type="button" size="xs" variant="outline" disabled={busy !== null} onClick={() => run(`sync-opencode:${account.id}`, async () => {
+                                          await syncAccountToOpencodeAuth(account.id)
+                                          showToast("success", "OpenCode auth synced")
+                                        })}>
+                                          Sync OpenCode auth
                                         </Button>
                                       )}
                                     </div>

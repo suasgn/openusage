@@ -44,8 +44,17 @@ export type PluginMeta = {
   lines: ManifestLine[]
   links?: PluginLink[]
   auth?: PluginAuth
+  externalAuth?: PluginExternalAuth | null
   /** Ordered list of primary metric candidates. Frontend picks first available. */
   primaryCandidates: string[]
+}
+
+export type PluginExternalAuth = {
+  opencode?: PluginOpenCodeExternalAuth | null
+}
+
+export type PluginOpenCodeExternalAuth = {
+  strategyIds: string[]
 }
 
 export type AuthStrategyKind = "apiKey" | "json" | "oauthPkce" | "deviceCode" | "browserCookie"

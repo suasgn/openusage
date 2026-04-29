@@ -127,6 +127,11 @@ pub fn cache_successful_output(output: &PluginOutput) {
     save_cache(&state.app_data_dir, &state.snapshots);
 }
 
+pub fn cached_snapshot_for_plugin(plugin_id: &str) -> Option<CachedPluginSnapshot> {
+    let state = cache_state().lock().expect("cache state poisoned");
+    state.snapshots.get(plugin_id).cloned()
+}
+
 // ---------------------------------------------------------------------------
 // Settings reader (reads settings.json directly, not via tauri_plugin_store)
 // ---------------------------------------------------------------------------

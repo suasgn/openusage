@@ -7,6 +7,7 @@ export type SettingsPluginState = {
   name: string
   enabled: boolean
   auth?: PluginMeta["auth"]
+  externalAuth?: PluginMeta["externalAuth"]
 }
 
 type UseSettingsPluginListArgs = {
@@ -29,6 +30,7 @@ export function useSettingsPluginList({ pluginSettings, pluginsMeta }: UseSettin
           name: meta.name,
           enabled: !disabled.has(id),
           auth: meta.auth,
+          externalAuth: meta.externalAuth,
         }
       })
       .filter((plugin): plugin is SettingsPluginState => plugin !== null)

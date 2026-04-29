@@ -30,6 +30,48 @@ pub struct PluginAuth {
     pub strategies: Vec<AuthStrategyManifest>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginExternalAuth {
+    #[serde(default)]
+    pub opencode: Option<OpenCodeExternalAuth>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenCodeExternalAuth {
+    pub auth_key: String,
+    #[serde(default)]
+    pub strategies: HashMap<String, OpenCodeExternalAuthStrategy>,
+    #[serde(default)]
+    pub rotation: Option<OpenCodeExternalAuthRotation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenCodeExternalAuthStrategy {
+    #[serde(rename = "type")]
+    pub auth_type: OpenCodeExternalAuthType,
+    #[serde(default)]
+    pub fields: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum OpenCodeExternalAuthType {
+    #[serde(rename = "api")]
+    Api,
+    #[serde(rename = "oauth")]
+    OAuth,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenCodeExternalAuthRotation {
+    #[serde(default)]
+    pub line_labels: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum AuthStrategyKind {
@@ -289,6 +331,8 @@ pub struct PluginManifest {
     pub links: Vec<PluginLink>,
     #[serde(default)]
     pub auth: Option<PluginAuth>,
+    #[serde(default)]
+    pub external_auth: Option<PluginExternalAuth>,
 }
 
 #[derive(Debug, Clone)]
@@ -570,6 +614,58 @@ mod tests {
                 .as_ref()
                 .and_then(|config| config.redirect_host.as_deref()),
             Some("127.0.0.1")
+        );
+    }
+
+    #[test]
+    fn external_opencode_auth_parses_from_manifest() {
+        let manifest = parse_manifest(
+            r#"
+            {
+              "schemaVersion": 1,
+              "id": "codex",
+              "name": "Codex",
+              "version": "0.0.1",
+              "entry": "plugin.js",
+              "icon": "icon.svg",
+              "externalAuth": {
+                "opencode": {
+                  "authKey": "openai",
+                  "strategies": {
+                    "oauth": {
+                      "type": "oauth",
+                      "fields": {
+                        "access": "/accessToken",
+                        "refresh": "/refreshToken",
+                        "expires": "/expiresAt"
+                      }
+                    }
+                  },
+                  "rotation": {
+                    "lineLabels": ["Session"]
+                  }
+                }
+              },
+              "lines": [
+                { "type": "progress", "label": "A", "scope": "overview" }
+              ]
+            }
+            "#,
+        );
+
+        let opencode = manifest
+            .external_auth
+            .expect("external auth should parse")
+            .opencode
+            .expect("opencode config should parse");
+        assert_eq!(opencode.auth_key, "openai");
+        assert_eq!(
+            opencode.strategies["oauth"].auth_type,
+            OpenCodeExternalAuthType::OAuth
+        );
+        assert_eq!(
+            opencode.rotation.unwrap().line_labels,
+            vec!["Session".to_string()]
         );
     }
 
