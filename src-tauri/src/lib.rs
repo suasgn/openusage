@@ -244,7 +244,7 @@ fn plugin_error_output(
     message: impl Into<String>,
 ) -> plugin_engine::runtime::PluginOutput {
     plugin_engine::runtime::PluginOutput {
-        plugin_id: plugin.manifest.id.clone(),
+        provider_id: plugin.manifest.id.clone(),
         display_name: plugin.manifest.name.clone(),
         plan: None,
         lines: vec![plugin_engine::runtime::MetricLine::Badge {
@@ -371,7 +371,7 @@ fn aggregate_account_outputs(
     }
 
     plugin_engine::runtime::PluginOutput {
-        plugin_id: plugin.manifest.id.clone(),
+        provider_id: plugin.manifest.id.clone(),
         display_name: plugin.manifest.name.clone(),
         plan: None,
         lines,

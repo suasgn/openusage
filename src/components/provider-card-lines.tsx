@@ -64,12 +64,14 @@ export function MetricLineGroups({
   resetTimerDisplayMode,
   onResetTimerDisplayModeToggle,
   now,
+  refreshing,
 }: {
   lines: MetricLine[]
   displayMode: DisplayMode
   resetTimerDisplayMode: ResetTimerDisplayMode
   onResetTimerDisplayModeToggle?: () => void
   now: number
+  refreshing?: boolean
 }) {
   return (
     <>
@@ -87,6 +89,7 @@ export function MetricLineGroups({
                   resetTimerDisplayMode={resetTimerDisplayMode}
                   onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
                   now={now}
+                  refreshing={refreshing}
                 />
               )
             ))}
@@ -104,6 +107,7 @@ export function MetricLineGroups({
                   resetTimerDisplayMode={resetTimerDisplayMode}
                   onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
                   now={now}
+                  refreshing={refreshing}
                 />
               )
             ))}
@@ -120,12 +124,14 @@ function MetricLineRenderer({
   resetTimerDisplayMode,
   onResetTimerDisplayModeToggle,
   now,
+  refreshing,
 }: {
   line: MetricLine
   displayMode: DisplayMode
   resetTimerDisplayMode: ResetTimerDisplayMode
   onResetTimerDisplayModeToggle?: () => void
   now: number
+  refreshing?: boolean
 }) {
   if (line.type === "text") {
     return (
@@ -259,7 +265,12 @@ function MetricLineRenderer({
             <PaceIndicator status={paceStatus} detailText={paceDetailText} isLimitReached={isLimitReached} />
           )}
         </div>
-        <Progress value={percent} indicatorColor={line.color} markerValue={paceMarkerValue} />
+        <Progress
+          value={percent}
+          indicatorColor={line.color}
+          markerValue={paceMarkerValue}
+          refreshing={refreshing}
+        />
         <div className="flex justify-between items-center mt-1.5">
           <span className="text-xs text-muted-foreground tabular-nums">{primaryText}</span>
           {secondaryText && (

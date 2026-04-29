@@ -49,7 +49,7 @@ export function useProbeRefreshActions({
       const lastManualRefreshAt = currentState?.lastManualRefreshAt
       if (lastManualRefreshAt && Date.now() - lastManualRefreshAt < REFRESH_COOLDOWN_MS) return
 
-      track("plugin_refreshed", { plugin_id: id })
+      track("provider_refreshed", { provider_id: id })
       resetAutoUpdateSchedule()
       startManualRefresh([id], "Failed to retry plugin:")
     },

@@ -41,6 +41,7 @@ export function OverviewPage({
           skeletonLines={plugin.meta.lines}
           accountOrder={accountOrderByPlugin?.[plugin.meta.id] ?? []}
           lastManualRefreshAt={plugin.lastManualRefreshAt}
+          lastUpdatedAt={plugin.lastUpdatedAt}
           onRetry={onRetryPlugin ? () => onRetryPlugin(plugin.meta.id) : undefined}
           scopeFilter="overview"
           displayMode={displayMode}

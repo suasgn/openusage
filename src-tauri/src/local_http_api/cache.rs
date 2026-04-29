@@ -15,7 +15,7 @@ const DEFAULT_ENABLED_PLUGINS: &[&str] = &["claude", "codex", "copilot"];
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CachedPluginSnapshot {
-    pub plugin_id: String,
+    pub provider_id: String,
     pub display_name: String,
     pub plan: Option<String>,
     pub lines: Vec<MetricLine>,
@@ -115,7 +115,7 @@ pub fn cache_successful_output(output: &PluginOutput) {
         .unwrap_or_default();
 
     let snapshot = CachedPluginSnapshot {
-        plugin_id: output.plugin_id.clone(),
+        provider_id: output.provider_id.clone(),
         display_name: output.display_name.clone(),
         plan: output.plan.clone(),
         lines: output.lines.clone(),
@@ -123,7 +123,7 @@ pub fn cache_successful_output(output: &PluginOutput) {
     };
 
     let mut state = cache_state().lock().expect("cache state poisoned");
-    state.snapshots.insert(output.plugin_id.clone(), snapshot);
+    state.snapshots.insert(output.provider_id.clone(), snapshot);
     save_cache(&state.app_data_dir, &state.snapshots);
 }
 
@@ -205,7 +205,7 @@ mod tests {
 
     fn make_snapshot(id: &str, name: &str) -> CachedPluginSnapshot {
         CachedPluginSnapshot {
-            plugin_id: id.to_string(),
+            provider_id: id.to_string(),
             display_name: name.to_string(),
             plan: Some("Pro".to_string()),
             lines: vec![],
@@ -240,7 +240,7 @@ mod tests {
         let loaded = load_cache(&dir);
 
         assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded["claude"].plugin_id, "claude");
+        assert_eq!(loaded["claude"].provider_id, "claude");
         assert_eq!(loaded["claude"].fetched_at, "2026-03-26T08:15:30Z");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn snapshot_with_progress_line_round_trips() {
         let snap = CachedPluginSnapshot {
-            plugin_id: "claude".to_string(),
+            provider_id: "claude".to_string(),
             display_name: "Claude".to_string(),
             plan: Some("Max 20x".to_string()),
             lines: vec![crate::plugin_engine::runtime::MetricLine::Progress {
@@ -297,7 +297,7 @@ mod tests {
 
         let json = serde_json::to_string(&snap).unwrap();
         let deserialized: CachedPluginSnapshot = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.plugin_id, "claude");
+        assert_eq!(deserialized.provider_id, "claude");
         assert_eq!(deserialized.lines.len(), 1);
     }
 }

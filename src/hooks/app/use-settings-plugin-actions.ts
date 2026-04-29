@@ -19,7 +19,7 @@ export function useSettingsPluginActions({
 }: UseSettingsPluginActionsArgs) {
   const handleReorder = useCallback((orderedIds: string[]) => {
     if (!pluginSettings) return
-    track("plugins_reordered", { count: orderedIds.length })
+    track("providers_reordered", { count: orderedIds.length })
     // orderedIds can be a subset if the caller only reorders visible items.
     // Re-insert missing IDs at their original relative positions so no plugin is dropped.
     const orderedSet = new Set(orderedIds)
@@ -51,7 +51,7 @@ export function useSettingsPluginActions({
 
   const handleToggle = useCallback((id: string, enabled: boolean) => {
     if (!pluginSettings) return
-    track("plugin_toggled", { plugin_id: id, enabled: enabled ? "true" : "false" })
+    track("provider_toggled", { provider_id: id, enabled: enabled ? "true" : "false" })
     const disabledSet = new Set(pluginSettings.disabled ?? [])
     if (enabled) {
       disabledSet.delete(id)

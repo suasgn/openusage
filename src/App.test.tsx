@@ -445,7 +445,7 @@ describe("App", () => {
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
     expect(state.probeHandlers).not.toBeNull()
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "text", label: "Now", value: "Later" }],
@@ -475,7 +475,7 @@ describe("App", () => {
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
 
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "progress", label: "Session", used: 50, limit: 100, format: { kind: "percent" } }],
@@ -506,7 +506,7 @@ describe("App", () => {
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
 
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [
@@ -678,13 +678,13 @@ describe("App", () => {
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
 
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "progress", label: "Session", used: 50, limit: 100, format: { kind: "percent" } }],
     })
     state.probeHandlers?.onResult({
-      pluginId: "b",
+      providerId: "b",
       displayName: "Beta",
       iconUrl: "icon-b",
       lines: [{ type: "progress", label: "Session", used: 30, limit: 100, format: { kind: "percent" } }],
@@ -980,7 +980,7 @@ describe("App", () => {
     render(<App />)
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "badge", label: "Error", text: "Bad" }],
@@ -995,7 +995,7 @@ describe("App", () => {
     render(<App />)
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
     state.probeHandlers?.onResult({
-      pluginId: "b",
+      providerId: "b",
       displayName: "Beta",
       iconUrl: "icon-b",
       lines: [{ type: "text", label: "Now", value: "OK" }],
@@ -1009,7 +1009,7 @@ describe("App", () => {
     reloadAction()
 
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalledWith(["b"]))
-    expect(state.trackMock).toHaveBeenCalledWith("plugin_refreshed", { plugin_id: "b" })
+    expect(state.trackMock).toHaveBeenCalledWith("provider_refreshed", { provider_id: "b" })
   })
 
   it("respects manual refresh cooldown for sidebar context menu reload", async () => {
@@ -1017,13 +1017,13 @@ describe("App", () => {
     render(<App />)
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "text", label: "Now", value: "OK" }],
     })
     state.probeHandlers?.onResult({
-      pluginId: "b",
+      providerId: "b",
       displayName: "Beta",
       iconUrl: "icon-b",
       lines: [{ type: "text", label: "Now", value: "OK" }],
@@ -1039,7 +1039,7 @@ describe("App", () => {
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalledWith(["b"]))
 
     state.probeHandlers?.onResult({
-      pluginId: "b",
+      providerId: "b",
       displayName: "Beta",
       iconUrl: "icon-b",
       lines: [{ type: "text", label: "Now", value: "OK" }],
@@ -1196,7 +1196,7 @@ describe("App", () => {
 
     // Provide some data so detail view has content.
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "text", label: "Now", value: "Later" }],
@@ -1225,13 +1225,13 @@ describe("App", () => {
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
 
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "text", label: "Alpha line", value: "A" }],
     })
     state.probeHandlers?.onResult({
-      pluginId: "b",
+      providerId: "b",
       displayName: "Beta",
       iconUrl: "icon-b",
       lines: [{ type: "text", label: "Beta line", value: "B" }],
@@ -1306,7 +1306,7 @@ describe("App", () => {
 
     // Push an error result to show Retry button
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "badge", label: "Error", text: "Something failed" }],
@@ -1440,13 +1440,13 @@ describe("App", () => {
     render(<App />)
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "text", label: "Now", value: "OK" }],
     })
     state.probeHandlers?.onResult({
-      pluginId: "b",
+      providerId: "b",
       displayName: "Beta",
       iconUrl: "icon-b",
       lines: [],
@@ -1469,13 +1469,13 @@ describe("App", () => {
     render(<App />)
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "text", label: "Now", value: "OK" }],
     })
     state.probeHandlers?.onResult({
-      pluginId: "b",
+      providerId: "b",
       displayName: "Beta",
       iconUrl: "icon-b",
       lines: [],
@@ -1504,7 +1504,7 @@ describe("App", () => {
       render(<App />)
       await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
       state.probeHandlers?.onResult({
-        pluginId: "a",
+        providerId: "a",
         displayName: "Alpha",
         iconUrl: "icon-a",
         lines: [{ type: "text", label: "Now", value: "OK" }],
@@ -1523,7 +1523,7 @@ describe("App", () => {
 
       // Simulate non-manual success after the failed refresh attempt.
       state.probeHandlers?.onResult({
-        pluginId: "a",
+        providerId: "a",
         displayName: "Alpha",
         iconUrl: "icon-a",
         lines: [{ type: "text", label: "Now", value: "OK" }],
@@ -1532,7 +1532,7 @@ describe("App", () => {
 
       // If manual state leaked, cooldown would hide Retry here.
       state.probeHandlers?.onResult({
-        pluginId: "a",
+        providerId: "a",
         displayName: "Alpha",
         iconUrl: "icon-a",
         lines: [{ type: "badge", label: "Error", text: "Network error" }],
@@ -1549,7 +1549,7 @@ describe("App", () => {
 
     // Show error to get Retry button
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "badge", label: "Error", text: "Network error" }],
@@ -1560,7 +1560,7 @@ describe("App", () => {
 
     // Simulate successful probe result after retry (isManual branch)
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "text", label: "Now", value: "OK" }],
@@ -1581,7 +1581,7 @@ describe("App", () => {
     await waitFor(() => expect(state.startBatchMock).toHaveBeenCalled())
 
     state.probeHandlers?.onResult({
-      pluginId: "a",
+      providerId: "a",
       displayName: "Alpha",
       iconUrl: "icon-a",
       lines: [{ type: "badge", label: "Error", text: "Network error" }],
@@ -1741,7 +1741,7 @@ describe("App", () => {
       await vi.waitFor(() => expect(state.renderTrayBarsIconMock).toHaveBeenCalledTimes(1))
 
       state.probeHandlers?.onResult({
-        pluginId: "a",
+        providerId: "a",
         displayName: "Alpha",
         iconUrl: "icon-a",
         lines: [{ type: "progress", label: "Session", used: 20, limit: 100, format: { kind: "percent" } }],
@@ -1800,7 +1800,7 @@ describe("App", () => {
 
       state.renderTrayBarsIconMock.mockClear()
       state.probeHandlers?.onResult({
-        pluginId: "a",
+        providerId: "a",
         displayName: "Alpha",
         iconUrl: "icon-a",
         lines: [{ type: "progress", label: "Session", used: 30, limit: 100, format: { kind: "percent" } }],
@@ -1845,7 +1845,7 @@ describe("App", () => {
       state.traySetIconMock.mockClear()
 
       state.probeHandlers?.onResult({
-        pluginId: "a",
+        providerId: "a",
         displayName: "Alpha",
         iconUrl: "icon-a",
         lines: [{ type: "progress", label: "Session", used: 50, limit: 100, format: { kind: "percent" } }],

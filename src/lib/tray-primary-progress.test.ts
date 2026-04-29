@@ -52,7 +52,7 @@ describe("getTrayPrimaryBars", () => {
       pluginStates: {
         b: {
           data: {
-            pluginId: "b",
+            providerId: "b",
             displayName: "B",
             iconUrl: "",
             lines: [
@@ -108,7 +108,7 @@ describe("getTrayPrimaryBars", () => {
       pluginStates: {
         a: {
           data: {
-            pluginId: "a",
+            providerId: "a",
             displayName: "A",
             iconUrl: "",
             lines: [
@@ -145,7 +145,7 @@ describe("getTrayPrimaryBars", () => {
       pluginStates: {
         a: {
           data: {
-            pluginId: "a",
+            providerId: "a",
             displayName: "A",
             iconUrl: "",
             lines: [
@@ -182,7 +182,7 @@ describe("getTrayPrimaryBars", () => {
       pluginStates: {
         a: {
           data: {
-            pluginId: "a",
+            providerId: "a",
             displayName: "A",
             iconUrl: "",
             lines: [
@@ -219,7 +219,7 @@ describe("getTrayPrimaryBars", () => {
       pluginStates: {
         a: {
           data: {
-            pluginId: "a",
+            providerId: "a",
             displayName: "A",
             iconUrl: "",
             lines: [
@@ -264,7 +264,7 @@ describe("getTrayPrimaryBars", () => {
       pluginStates: {
         a: {
           data: {
-            pluginId: "a",
+            providerId: "a",
             displayName: "A",
             iconUrl: "",
             lines: [
@@ -309,7 +309,7 @@ describe("getTrayPrimaryBars", () => {
       pluginStates: {
         a: {
           data: {
-            pluginId: "a",
+            providerId: "a",
             displayName: "A",
             iconUrl: "",
             lines: [
@@ -347,7 +347,7 @@ describe("getTrayPrimaryBars", () => {
       pluginStates: {
         a: {
           data: {
-            pluginId: "a",
+            providerId: "a",
             displayName: "A",
             iconUrl: "",
             lines: [
@@ -406,7 +406,7 @@ describe("getTrayPrimaryTotalBar", () => {
       pluginStates: {
         a: {
           data: {
-            pluginId: "a",
+            providerId: "a",
             displayName: "A",
             iconUrl: "",
             lines: [
@@ -419,7 +419,7 @@ describe("getTrayPrimaryTotalBar", () => {
         },
         b: {
           data: {
-            pluginId: "b",
+            providerId: "b",
             displayName: "B",
             iconUrl: "",
             lines: [
@@ -447,7 +447,7 @@ describe("getTrayPrimaryTotalBar", () => {
       pluginStates: {
         a: {
           data: {
-            pluginId: "a",
+            providerId: "a",
             displayName: "A",
             iconUrl: "",
             lines: [
@@ -459,7 +459,7 @@ describe("getTrayPrimaryTotalBar", () => {
         },
         b: {
           data: {
-            pluginId: "b",
+            providerId: "b",
             displayName: "B",
             iconUrl: "",
             lines: [

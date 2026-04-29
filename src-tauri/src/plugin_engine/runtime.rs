@@ -43,7 +43,7 @@ pub enum MetricLine {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginOutput {
-    pub plugin_id: String,
+    pub provider_id: String,
     pub display_name: String,
     pub plan: Option<String>,
     pub lines: Vec<MetricLine>,
@@ -167,7 +167,7 @@ pub fn run_probe(
         };
 
         PluginOutput {
-            plugin_id,
+            provider_id: plugin_id,
             display_name,
             plan,
             lines,
@@ -480,7 +480,7 @@ fn parse_lines(result: &Object) -> Result<Vec<MetricLine>, String> {
 
 fn error_output(plugin: &LoadedPlugin, message: String) -> PluginOutput {
     PluginOutput {
-        plugin_id: plugin.manifest.id.clone(),
+        provider_id: plugin.manifest.id.clone(),
         display_name: plugin.manifest.name.clone(),
         plan: None,
         lines: vec![error_line(message)],

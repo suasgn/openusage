@@ -76,10 +76,10 @@ fn route(method: &str, path: &str) -> String {
         };
     }
 
-    if let Some(plugin_id) = path.strip_prefix("/v1/usage/") {
-        if !plugin_id.is_empty() && !plugin_id.contains('/') {
+    if let Some(provider_id) = path.strip_prefix("/v1/usage/") {
+        if !provider_id.is_empty() && !provider_id.contains('/') {
             return match method {
-                "GET" => handle_get_usage_single(plugin_id),
+                "GET" => handle_get_usage_single(provider_id),
                 "OPTIONS" => response_no_content(),
                 _ => response_method_not_allowed(),
             };
@@ -98,16 +98,16 @@ fn handle_get_usage_collection() -> String {
     response_json(200, "OK", &body)
 }
 
-fn handle_get_usage_single(plugin_id: &str) -> String {
+fn handle_get_usage_single(provider_id: &str) -> String {
     let state = cache_state().lock().expect("cache state poisoned");
 
     // Check if provider is known at all
-    let is_known = state.known_plugin_ids.iter().any(|id| id == plugin_id);
+    let is_known = state.known_plugin_ids.iter().any(|id| id == provider_id);
     if !is_known {
         return response_not_found("provider_not_found");
     }
 
-    match state.snapshots.get(plugin_id) {
+    match state.snapshots.get(provider_id) {
         Some(snapshot) => {
             let body = serde_json::to_string(snapshot).unwrap_or_else(|_| "{}".to_string());
             response_json(200, "OK", &body)
@@ -161,7 +161,7 @@ mod tests {
 
     fn make_snapshot(id: &str, name: &str) -> CachedPluginSnapshot {
         CachedPluginSnapshot {
-            plugin_id: id.to_string(),
+            provider_id: id.to_string(),
             display_name: name.to_string(),
             plan: Some("Pro".to_string()),
             lines: vec![],

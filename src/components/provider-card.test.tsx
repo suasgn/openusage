@@ -849,6 +849,143 @@ describe("ProviderCard", () => {
     expect(screen.getByText("Session")).toBeInTheDocument()
     expect(screen.queryByText("Extra")).not.toBeInTheDocument()
   })
+
+  it("keeps stale data visible while loading", () => {
+    render(
+      <ProviderCard
+        name="SWR"
+        displayMode="used"
+        loading
+        lastUpdatedAt={Date.now() - 60_000}
+        lines={[
+          { type: "text", label: "Label", value: "Value" },
+          { type: "progress", label: "Session", used: 32, limit: 100, format: { kind: "percent" } },
+        ]}
+        skeletonLines={[
+          { type: "text", label: "Label", scope: "overview" },
+          { type: "progress", label: "Session", scope: "overview" },
+        ]}
+      />
+    )
+
+    expect(screen.getByText("Value")).toBeInTheDocument()
+    expect(screen.getByText("32%")).toBeInTheDocument()
+    expect(document.querySelector('[data-slot="progress-refreshing"]')).toBeTruthy()
+  })
+
+  it("skips skeleton on refresh when lastUpdatedAt is set and filtered lines are empty", () => {
+    render(
+      <ProviderCard
+        name="FilteredEmpty"
+        displayMode="used"
+        loading
+        lastUpdatedAt={Date.now() - 60_000}
+        scopeFilter="overview"
+        skeletonLines={[{ type: "progress", label: "Session", scope: "overview" }]}
+        lines={[{ type: "text", label: "DetailOnly", value: "Hidden" }]}
+      />
+    )
+
+    expect(screen.queryByText("Session")).toBeNull()
+    expect(screen.queryByText("DetailOnly")).toBeNull()
+  })
+
+  it("renders skeleton on first load when no stale data exists", () => {
+    render(
+      <ProviderCard
+        name="Cold"
+        displayMode="used"
+        loading
+        skeletonLines={[{ type: "progress", label: "Session", scope: "overview" }]}
+      />
+    )
+
+    expect(screen.getByText("Session")).toBeInTheDocument()
+    expect(document.querySelector('[data-slot="progress-refreshing"]')).toBeNull()
+  })
+
+  it("shows inline warning with stale data on refresh error", () => {
+    render(
+      <ProviderCard
+        name="StaleErr"
+        displayMode="used"
+        error="Couldn't update data. Try again?"
+        lastUpdatedAt={Date.now() - 60_000}
+        lines={[
+          { type: "progress", label: "Session", used: 40, limit: 100, format: { kind: "percent" } },
+        ]}
+      />
+    )
+
+    expect(screen.getByText("40%")).toBeInTheDocument()
+    expect(screen.getAllByText("Couldn't update data. Try again?").length).toBeGreaterThan(0)
+    expect(screen.queryByRole("alert")).toBeNull()
+  })
+
+  it("shows full error when errored without stale data", () => {
+    render(
+      <ProviderCard
+        name="ColdErr"
+        displayMode="used"
+        error="Nope"
+        onRetry={() => {}}
+      />
+    )
+
+    expect(screen.getByRole("alert")).toBeInTheDocument()
+    expect(screen.getByText("Nope")).toBeInTheDocument()
+  })
+
+  it("shows relative last-updated timestamp in retry tooltip", () => {
+    vi.useFakeTimers()
+    const now = new Date("2026-02-02T00:05:00.000Z")
+    vi.setSystemTime(now)
+
+    render(
+      <ProviderCard
+        name="Updated"
+        displayMode="used"
+        onRetry={() => {}}
+        lastUpdatedAt={now.getTime() - 120_000}
+        lines={[{ type: "text", label: "Label", value: "Value" }]}
+      />
+    )
+
+    expect(screen.getByText(/Updated 2m ago/)).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it("clamps future last-updated timestamps to just now", () => {
+    vi.useFakeTimers()
+    const now = new Date("2026-02-02T00:05:00.000Z")
+    vi.setSystemTime(now)
+
+    render(
+      <ProviderCard
+        name="Skew"
+        displayMode="used"
+        onRetry={() => {}}
+        lastUpdatedAt={now.getTime() + 60_000}
+        lines={[{ type: "text", label: "Label", value: "Value" }]}
+      />
+    )
+
+    expect(screen.getByText(/Updated just now/)).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it("omits retry tooltip timestamp when lastUpdatedAt is null", () => {
+    render(
+      <ProviderCard
+        name="NoTimestamp"
+        displayMode="used"
+        onRetry={() => {}}
+        lines={[{ type: "text", label: "Label", value: "Value" }]}
+      />
+    )
+
+    expect(screen.queryByText(/Updated/)).toBeNull()
+  })
 })
 
 describe("groupLinesByType", () => {

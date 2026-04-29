@@ -39,7 +39,7 @@ describe("useSettingsPluginActions", () => {
       result.current.handleReorder(["b", "a"])
     })
 
-    expect(trackMock).toHaveBeenCalledWith("plugins_reordered", { count: 2 })
+    expect(trackMock).toHaveBeenCalledWith("providers_reordered", { count: 2 })
     expect(setPluginSettings).toHaveBeenCalledWith({ order: ["b", "a"], disabled: [] })
     expect(savePluginSettingsMock).toHaveBeenCalledWith({ order: ["b", "a"], disabled: [] })
     expect(scheduleTrayIconUpdate).toHaveBeenCalledWith("settings", 2000)
@@ -167,7 +167,7 @@ describe("useSettingsPluginActions", () => {
     })
 
     const expectedSettings = { order: ["a", "b"], disabled: ["b"] }
-    expect(trackMock).toHaveBeenCalledWith("plugin_toggled", { plugin_id: "b", enabled: "false" })
+    expect(trackMock).toHaveBeenCalledWith("provider_toggled", { provider_id: "b", enabled: "false" })
     expect(setPluginSettings).toHaveBeenCalledWith(expectedSettings)
     expect(savePluginSettingsMock).toHaveBeenCalledWith(expectedSettings)
     expect(scheduleTrayIconUpdate).toHaveBeenCalledWith("settings", 2000)

@@ -16,10 +16,11 @@ describe("ProviderDetailPage", () => {
         resetTimerDisplayMode="relative"
         plugin={{
           meta: { id: "a", name: "Alpha", iconUrl: "", lines: [] },
-          data: { pluginId: "a", displayName: "Alpha", iconUrl: "", lines: [] },
+          data: { providerId: "a", displayName: "Alpha", iconUrl: "", lines: [] },
           loading: false,
           error: null,
           lastManualRefreshAt: null,
+          lastUpdatedAt: null,
         }}
       />
     )
@@ -37,6 +38,7 @@ describe("ProviderDetailPage", () => {
           loading: false,
           error: null,
           lastManualRefreshAt: null,
+          lastUpdatedAt: null,
         }}
       />
     )
@@ -60,6 +62,7 @@ describe("ProviderDetailPage", () => {
           loading: false,
           error: null,
           lastManualRefreshAt: null,
+          lastUpdatedAt: null,
         }}
       />
     )

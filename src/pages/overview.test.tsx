@@ -12,10 +12,11 @@ describe("OverviewPage", () => {
     const plugins = [
       {
         meta: { id: "a", name: "Alpha", iconUrl: "icon", lines: [] },
-        data: { pluginId: "a", displayName: "Alpha", lines: [], iconUrl: "icon" },
+        data: { providerId: "a", displayName: "Alpha", lines: [], iconUrl: "icon" },
         loading: false,
         error: null,
         lastManualRefreshAt: null,
+        lastUpdatedAt: null,
       },
     ]
     render(<OverviewPage plugins={plugins} displayMode="used" resetTimerDisplayMode="relative" />)
@@ -35,7 +36,7 @@ describe("OverviewPage", () => {
           ],
         },
         data: {
-          pluginId: "test",
+          providerId: "test",
           displayName: "Test",
           lines: [
             { type: "text" as const, label: "Primary", value: "Shown" },
@@ -46,6 +47,7 @@ describe("OverviewPage", () => {
         loading: false,
         error: null,
         lastManualRefreshAt: null,
+        lastUpdatedAt: null,
       },
     ]
     render(<OverviewPage plugins={plugins} displayMode="used" resetTimerDisplayMode="relative" />)
@@ -68,7 +70,7 @@ describe("OverviewPage", () => {
           ],
         },
         data: {
-          pluginId: "test",
+          providerId: "test",
           displayName: "Test",
           lines: [
             { type: "text" as const, label: "Work @@ acc-1 :: Primary", value: "Shown" },
@@ -79,6 +81,7 @@ describe("OverviewPage", () => {
         loading: false,
         error: null,
         lastManualRefreshAt: null,
+        lastUpdatedAt: null,
       },
     ]
 
@@ -100,10 +103,11 @@ describe("OverviewPage", () => {
           lines: [],
           links: [{ label: "Status", url: "https://status.example.com" }],
         },
-        data: { pluginId: "alpha", displayName: "Alpha", lines: [], iconUrl: "icon" },
+        data: { providerId: "alpha", displayName: "Alpha", lines: [], iconUrl: "icon" },
         loading: false,
         error: null,
         lastManualRefreshAt: null,
+        lastUpdatedAt: null,
       },
     ]
 

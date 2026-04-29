@@ -45,7 +45,7 @@ describe("useProbeRefreshActions", () => {
       result.current.handleRetryPlugin("codex")
     })
 
-    expect(trackMock).toHaveBeenCalledWith("plugin_refreshed", { plugin_id: "codex" })
+    expect(trackMock).toHaveBeenCalledWith("provider_refreshed", { provider_id: "codex" })
     expect(setLoadingForPlugins).toHaveBeenCalledWith(["codex"])
     expect(startBatch).toHaveBeenCalledWith(["codex"])
     expect(manualRefreshIdsRef.current.has("codex")).toBe(true)
@@ -61,9 +61,9 @@ describe("useProbeRefreshActions", () => {
         pluginSettings: { order: ["a", "b", "c"], disabled: [] },
         pluginStatesRef: {
           current: {
-            a: { data: null, loading: true, error: null, lastManualRefreshAt: null },
-            b: { data: null, loading: false, error: null, lastManualRefreshAt: 900_001 },
-            c: { data: null, loading: false, error: null, lastManualRefreshAt: null },
+            a: { data: null, loading: true, error: null, lastManualRefreshAt: null, lastUpdatedAt: null },
+            b: { data: null, loading: false, error: null, lastManualRefreshAt: 900_001, lastUpdatedAt: null },
+            c: { data: null, loading: false, error: null, lastManualRefreshAt: null, lastUpdatedAt: null },
           },
         },
         manualRefreshIdsRef: { current: new Set<string>(["b"]) },
@@ -93,7 +93,7 @@ describe("useProbeRefreshActions", () => {
           pluginSettings: settings,
           pluginStatesRef: {
             current: {
-              codex: { data: null, loading: true, error: null, lastManualRefreshAt: null },
+              codex: { data: null, loading: true, error: null, lastManualRefreshAt: null, lastUpdatedAt: null },
             },
           },
           manualRefreshIdsRef: { current: new Set<string>() },

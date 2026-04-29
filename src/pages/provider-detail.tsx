@@ -39,6 +39,7 @@ export function ProviderDetailPage({
       skeletonLines={plugin.meta.lines}
       accountOrder={accountOrder}
       lastManualRefreshAt={plugin.lastManualRefreshAt}
+      lastUpdatedAt={plugin.lastUpdatedAt}
       onRetry={onRetry}
       scopeFilter="all"
       displayMode={displayMode}
