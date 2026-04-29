@@ -2,6 +2,8 @@
   var LS_SERVICE = "exa.language_server_pb.LanguageServerService"
   var CLOUD_CODE_URLS = [
     "https://daily-cloudcode-pa.googleapis.com",
+    "https://daily-cloudcode-pa.sandbox.googleapis.com",
+    "https://autopush-cloudcode-pa.sandbox.googleapis.com",
     "https://cloudcode-pa.googleapis.com",
   ]
   var FETCH_MODELS_PATH = "/v1internal:fetchAvailableModels"

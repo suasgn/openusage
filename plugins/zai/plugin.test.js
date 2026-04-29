@@ -157,6 +157,57 @@ describe("zai plugin", () => {
     expect(authHeader).toBe("Bearer zai-key")
   })
 
+  it("does not double-prefix Bearer API keys", async () => {
+    const ctx = makeCtx()
+    mockCredentialsWithKey(ctx, "Bearer zai-key")
+    mockHttp(ctx)
+
+    const plugin = await loadPlugin()
+    plugin.probe(ctx)
+
+    const authHeader = ctx.host.http.request.mock.calls[0][0].headers.Authorization
+    expect(authHeader).toBe("Bearer zai-key")
+  })
+
+  it("uses custom API host for subscription and quota requests", async () => {
+    const ctx = makeCtx()
+    ctx.credentials = { apiKey: "zai-key", apiHost: "https://example.test" }
+    mockHttp(ctx)
+
+    const plugin = await loadPlugin()
+    plugin.probe(ctx)
+
+    const urls = ctx.host.http.request.mock.calls.map((call) => call[0].url)
+    expect(urls[0]).toBe("https://example.test/api/biz/subscription/list")
+    expect(urls[1]).toBe("https://example.test/api/monitor/usage/quota/limit")
+  })
+
+  it("uses quotaUrl for quota request", async () => {
+    const ctx = makeCtx()
+    ctx.credentials = { apiKey: "zai-key", quotaUrl: "https://quota.example.test/custom" }
+    mockHttp(ctx)
+
+    const plugin = await loadPlugin()
+    plugin.probe(ctx)
+
+    const urls = ctx.host.http.request.mock.calls.map((call) => call[0].url)
+    expect(urls[0]).toBe("https://api.z.ai/api/biz/subscription/list")
+    expect(urls[1]).toBe("https://quota.example.test/custom")
+  })
+
+  it("uses BigModel CN base URL for cn region", async () => {
+    const ctx = makeCtx()
+    ctx.credentials = { apiKey: "zai-key", apiRegion: "cn" }
+    mockHttp(ctx)
+
+    const plugin = await loadPlugin()
+    plugin.probe(ctx)
+
+    const urls = ctx.host.http.request.mock.calls.map((call) => call[0].url)
+    expect(urls[0]).toBe("https://open.bigmodel.cn/api/biz/subscription/list")
+    expect(urls[1]).toBe("https://open.bigmodel.cn/api/monitor/usage/quota/limit")
+  })
+
   it("renders session usage as percent from quota response", async () => {
     const ctx = makeCtx()
     mockCredentialsWithKey(ctx, "test-key")

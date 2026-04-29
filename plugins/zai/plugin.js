@@ -1,7 +1,8 @@
 (function () {
   const BASE_URL = "https://api.z.ai"
-  const SUBSCRIPTION_URL = BASE_URL + "/api/biz/subscription/list"
-  const QUOTA_URL = BASE_URL + "/api/monitor/usage/quota/limit"
+  const CN_BASE_URL = "https://open.bigmodel.cn"
+  const SUBSCRIPTION_PATH = "api/biz/subscription/list"
+  const QUOTA_PATH = "api/monitor/usage/quota/limit"
   const PERIOD_MS = 5 * 60 * 60 * 1000
   const WEEK_MS = 7 * 24 * 60 * 60 * 1000
   const MONTH_MS = 30 * 24 * 60 * 60 * 1000
@@ -12,18 +13,92 @@
     return trimmed ? trimmed : null
   }
 
-  function loadApiKey(ctx) {
-    const credentials = ctx.credentials && typeof ctx.credentials === "object" ? ctx.credentials : null
-    return readString(credentials && credentials.apiKey)
+  function pickString(values) {
+    for (let i = 0; i < values.length; i += 1) {
+      const value = readString(values[i])
+      if (value) return value
+    }
+    return null
   }
 
-  function fetchSubscription(ctx, apiKey) {
+  function stripWrappedQuotes(value) {
+    const raw = readString(value)
+    if (!raw) return null
+    if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+      return readString(raw.slice(1, -1))
+    }
+    return raw
+  }
+
+  function withScheme(raw) {
+    const value = stripWrappedQuotes(raw)
+    if (!value) return null
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) return value
+    return "https://" + value
+  }
+
+  function baseUrlForRegion(region) {
+    const normalized = readString(region)
+    if (!normalized) return BASE_URL
+    const lower = normalized.toLowerCase()
+    if (lower === "bigmodel-cn" || lower === "bigmodelcn" || lower === "cn" || lower === "zhipu") {
+      return CN_BASE_URL
+    }
+    return BASE_URL
+  }
+
+  function appendPathIfHost(raw, path) {
+    const url = withScheme(raw)
+    if (!url) return null
+    if (/^[a-z][a-z0-9+.-]*:\/\/[^/]+\/?$/i.test(url)) {
+      return url.replace(/\/+$/, "") + "/" + path
+    }
+    return url
+  }
+
+  function authHeader(apiKey) {
+    const key = readString(apiKey)
+    if (!key) return ""
+    if (key.toLowerCase().startsWith("bearer ")) return key
+    return "Bearer " + key
+  }
+
+  function loadCredentials(ctx) {
+    const credentials = ctx.credentials && typeof ctx.credentials === "object" ? ctx.credentials : null
+    return {
+      apiKey: pickString([
+        credentials && credentials.apiKey,
+        credentials && credentials.api_key,
+        credentials && credentials.token,
+        credentials && credentials.access_token,
+        credentials && credentials.authToken,
+      ]),
+      apiHost: pickString([credentials && credentials.apiHost, credentials && credentials.api_host]),
+      quotaUrl: pickString([credentials && credentials.quotaUrl, credentials && credentials.quota_url]),
+      apiRegion: pickString([credentials && credentials.apiRegion, credentials && credentials.api_region]),
+    }
+  }
+
+  function resolveQuotaUrl(credentials) {
+    if (credentials.quotaUrl) return appendPathIfHost(credentials.quotaUrl, QUOTA_PATH)
+    if (credentials.apiHost) return appendPathIfHost(credentials.apiHost, QUOTA_PATH)
+    return appendPathIfHost(baseUrlForRegion(credentials.apiRegion), QUOTA_PATH)
+  }
+
+  function resolveSubscriptionUrl(credentials) {
+    const baseUrl = credentials.apiHost || baseUrlForRegion(credentials.apiRegion)
+    return appendPathIfHost(baseUrl, SUBSCRIPTION_PATH)
+  }
+
+  function fetchSubscription(ctx, credentials) {
+    const url = resolveSubscriptionUrl(credentials)
+    if (!url) return null
     try {
       const resp = ctx.util.request({
         method: "GET",
-        url: SUBSCRIPTION_URL,
+        url,
         headers: {
-          Authorization: "Bearer " + apiKey,
+          Authorization: authHeader(credentials.apiKey),
           Accept: "application/json",
         },
         timeoutMs: 10000,
@@ -46,14 +121,17 @@
     }
   }
 
-  function fetchQuota(ctx, apiKey) {
+  function fetchQuota(ctx, credentials) {
+    const url = resolveQuotaUrl(credentials)
+    if (!url) throw "Z.ai quota URL invalid. Check your Z.ai account settings."
+
     let resp
     try {
       resp = ctx.util.request({
         method: "GET",
-        url: QUOTA_URL,
+        url,
         headers: {
-          Authorization: "Bearer " + apiKey,
+          Authorization: authHeader(credentials.apiKey),
           Accept: "application/json",
         },
         timeoutMs: 10000,
@@ -100,15 +178,15 @@
   }
 
   function probe(ctx) {
-    const apiKey = loadApiKey(ctx)
-    if (!apiKey) {
+    const credentials = loadCredentials(ctx)
+    if (!credentials.apiKey) {
       throw "Z.ai API key missing. Add a Z.ai account in Settings."
     }
 
-    const sub = fetchSubscription(ctx, apiKey)
+    const sub = fetchSubscription(ctx, credentials)
     const plan = sub && sub.productName ? ctx.fmt.planLabel(sub.productName) : null
 
-    const quota = fetchQuota(ctx, apiKey)
+    const quota = fetchQuota(ctx, credentials)
     const lines = []
 
     const container = quota.data || quota

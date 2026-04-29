@@ -83,6 +83,37 @@ Validation rules:
 | `label` | string | Yes      | Link text shown in the provider detail quick-actions row |
 | `url`   | string | Yes      | External destination opened in the browser (`http/https` only) |
 
+### Credential Fields (Optional)
+
+Manual auth strategies can declare `fields` to render a structured credentials form instead of raw JSON.
+
+```json
+{
+  "name": "apiRegion",
+  "label": "Region",
+  "description": "Global uses api.z.ai. China uses open.bigmodel.cn.",
+  "fieldType": "segmented",
+  "defaultValue": "global",
+  "options": [
+    { "label": "Global", "value": "global" },
+    { "label": "China", "value": "cn" }
+  ]
+}
+```
+
+Supported field keys: `name`, `label`, `description`, `fieldType`, `secret`, `required`, `placeholder`, `defaultValue`, `options`, `advanced`.
+
+Supported `fieldType` values:
+
+| Value       | UI component        | Notes |
+|-------------|---------------------|-------|
+| `text`      | single-line input   | Default for normal fields |
+| `password`  | password input      | Default when `secret: true` |
+| `textarea`  | multi-line textarea | For long JSON/session values |
+| `select`    | dropdown            | Requires `options` |
+| `segmented` | segmented buttons   | Requires `options`; default when `options` are present |
+| `checkbox`  | checkbox            | Saves a boolean |
+
 ## Output Shape Declaration
 
 Plugins must declare their output shape in `plugin.json`. This enables the UI to render

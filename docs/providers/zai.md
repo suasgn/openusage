@@ -9,7 +9,8 @@ Tracks [Z.ai](https://z.ai) (Zhipu AI) usage quotas for GLM coding plans.
 
 - **Protocol:** REST (plain JSON)
 - **Base URL:** `https://api.z.ai/`
-- **Auth:** API key via environment variable (`ZAI_API_KEY`, fallback `GLM_API_KEY`)
+- **CN Base URL:** `https://open.bigmodel.cn/` when `apiRegion` is `cn`
+- **Auth:** API key via environment variable (`ZAI_API_KEY`, fallback `GLM_API_KEY`) or account JSON
 - **Session utilization:** percentage (0-100)
 - **Weekly utilization:** percentage (0-100)
 - **Web searches:** count-based (used / limit)
@@ -37,6 +38,22 @@ set -Ux ZAI_API_KEY "YOUR_API_KEY"
 ```
 
 3. Enable the Z.ai plugin in OpenUsage settings
+
+Optional account JSON fields:
+
+```json
+{
+  "apiKey": "YOUR_API_KEY",
+  "apiHost": "https://api.z.ai",
+  "quotaUrl": "https://api.z.ai/api/monitor/usage/quota/limit",
+  "apiRegion": "cn"
+}
+```
+
+- `apiHost` changes both subscription and quota base URLs.
+- `quotaUrl` overrides only the quota endpoint.
+- `apiRegion: "cn"` uses `https://open.bigmodel.cn`.
+- `apiKey` may include or omit the `Bearer ` prefix.
 
 ## Endpoints
 

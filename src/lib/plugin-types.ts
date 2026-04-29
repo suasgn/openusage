@@ -53,9 +53,21 @@ export type AuthStrategyKind = "apiKey" | "json" | "oauthPkce" | "deviceCode" | 
 export type AuthCredentialField = {
   name: string
   label: string
+  description?: string | null
+  fieldType?: AuthCredentialFieldType | null
   secret?: boolean
   required?: boolean
   placeholder?: string | null
+  defaultValue?: string | null
+  options?: AuthCredentialFieldOption[]
+  advanced?: boolean
+}
+
+export type AuthCredentialFieldType = "text" | "password" | "textarea" | "select" | "segmented" | "checkbox"
+
+export type AuthCredentialFieldOption = {
+  label: string
+  value: string
 }
 
 export type AuthStrategy = {

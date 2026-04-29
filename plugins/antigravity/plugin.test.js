@@ -540,7 +540,7 @@ describe("antigravity plugin", () => {
       const url = String(opts.url)
       if (url.includes("fetchAvailableModels")) {
         calledUrls.push(url)
-        if (url.includes("daily-cloudcode")) {
+        if (url.includes("daily-cloudcode") || url.includes("autopush-cloudcode")) {
           throw new Error("network error")
         }
         return { status: 200, bodyText: JSON.stringify(makeCloudCodeResponse()) }
@@ -551,9 +551,11 @@ describe("antigravity plugin", () => {
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
 
-    expect(calledUrls.length).toBe(2)
+    expect(calledUrls.length).toBe(4)
     expect(calledUrls[0]).toContain("daily-cloudcode-pa.googleapis.com")
-    expect(calledUrls[1]).toContain("cloudcode-pa.googleapis.com")
+    expect(calledUrls[1]).toContain("daily-cloudcode-pa.sandbox.googleapis.com")
+    expect(calledUrls[2]).toContain("autopush-cloudcode-pa.sandbox.googleapis.com")
+    expect(calledUrls[3]).toContain("cloudcode-pa.googleapis.com")
     expect(result.lines.length).toBeGreaterThan(0)
   })
 

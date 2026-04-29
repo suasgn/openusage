@@ -20,8 +20,9 @@ import { CSS } from "@dnd-kit/utilities"
 import { AlertCircle, CheckCircle2, ChevronDown, Copy, GripVertical, Plus, RefreshCw, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { SettingsPluginState } from "@/hooks/app/use-settings-plugin-list"
-import type { AuthStrategy } from "@/lib/plugin-types"
+import type { AuthCredentialField, AuthCredentialFieldType, AuthStrategy } from "@/lib/plugin-types"
 import {
   loadAccountOrderByPlugin,
   saveAccountOrderByPlugin,
@@ -97,6 +98,52 @@ function isAuthFlow(strategy: AuthStrategy): boolean {
   return ["oauthPkce", "deviceCode", "browserCookie"].includes(strategy.kind)
 }
 
+function usesFieldCredentialForm(strategy: AuthStrategy): boolean {
+  return !isAuthFlow(strategy) && strategy.fields.length > 0
+}
+
+type FieldDraftByAccount = Record<string, Record<string, string>>
+
+function credentialFieldType(field: AuthCredentialField): AuthCredentialFieldType {
+  if (field.fieldType) return field.fieldType
+  if (field.options && field.options.length > 0) return "segmented"
+  if (field.secret) return "password"
+  return "text"
+}
+
+function fieldDefaultValue(field: AuthCredentialField): string {
+  if (credentialFieldType(field) === "checkbox") return field.defaultValue === "true" ? "true" : "false"
+  return field.defaultValue ?? field.options?.[0]?.value ?? ""
+}
+
+function fieldDraftValue(drafts: FieldDraftByAccount, accountId: string, field: AuthCredentialField): string {
+  return drafts[accountId]?.[field.name] ?? fieldDefaultValue(field)
+}
+
+function buildFieldCredentials(accountId: string, strategy: AuthStrategy, drafts: FieldDraftByAccount): Record<string, unknown> {
+  const credentials: Record<string, unknown> = { type: strategy.id }
+  for (const field of strategy.fields) {
+    const fieldType = credentialFieldType(field)
+    if (fieldType === "checkbox") {
+      credentials[field.name] = fieldDraftValue(drafts, accountId, field) === "true"
+      continue
+    }
+
+    const value = fieldDraftValue(drafts, accountId, field).trim()
+    if (!value) {
+      if (field.required) throw new Error(`${field.label} is required`)
+      continue
+    }
+    credentials[field.name] = value
+  }
+  return credentials
+}
+
+function FieldDescription({ description }: { description?: string | null }) {
+  if (!description) return null
+  return <p className="text-[11px] text-muted-foreground">{description}</p>
+}
+
 function authLabel(strategy?: AuthStrategy | null): string {
   if (!strategy) return "Auth"
   return strategy.label || strategy.id
@@ -160,6 +207,7 @@ export function AccountSettingsSection({
   const [createPickerPluginId, setCreatePickerPluginId] = useState<string | null>(null)
   const [expandedById, setExpandedById] = useState<Record<string, boolean>>({})
   const [draftById, setDraftById] = useState<Record<string, string>>({})
+  const [fieldDraftById, setFieldDraftById] = useState<FieldDraftByAccount>({})
   const [labelDraftById, setLabelDraftById] = useState<Record<string, string>>({})
   const [sessionById, setSessionById] = useState<Record<string, AccountSession | undefined>>({})
   const [busy, setBusy] = useState<string | null>(null)
@@ -263,6 +311,14 @@ export function AccountSettingsSection({
     showToast("success", `${plugin.name} credentials saved`)
   }
 
+  const saveFieldCredentials = async (plugin: SettingsPluginState, account: AccountRecord, strategy: AuthStrategy) => {
+    await setAccountCredentials(account.id, buildFieldCredentials(account.id, strategy, fieldDraftById))
+    setFieldDraftById((previous) => ({ ...previous, [account.id]: {} }))
+    await reload()
+    onAccountChanged(plugin.id)
+    showToast("success", `${plugin.name} credentials saved`)
+  }
+
   const startAuth = async (plugin: SettingsPluginState, account: AccountRecord) => {
     const started = await startAccountAuth(plugin.id, account.id)
     setSessionById((previous) => ({
@@ -304,6 +360,118 @@ export function AccountSettingsSection({
     void saveAccountOrderByPlugin(next).catch((error) => {
       console.error("Failed to save account order:", error)
     })
+  }
+
+  const setFieldDraft = (accountId: string, fieldName: string, value: string) => {
+    setFieldDraftById((previous) => ({
+      ...previous,
+      [accountId]: {
+        ...(previous[accountId] ?? {}),
+        [fieldName]: value,
+      },
+    }))
+  }
+
+  const renderCredentialField = (accountId: string, field: AuthCredentialField) => {
+    const value = fieldDraftValue(fieldDraftById, accountId, field)
+    const inputId = `credential-${accountId}-${field.name}`
+    const fieldType = credentialFieldType(field)
+
+    if (fieldType === "checkbox") {
+      return (
+        <label key={field.name} className="inline-flex items-center gap-2 rounded-md border bg-background px-2 py-2 text-xs text-muted-foreground">
+          <Checkbox
+            checked={value === "true"}
+            disabled={busy !== null}
+            onCheckedChange={(checked) => setFieldDraft(accountId, field.name, checked === true ? "true" : "false")}
+          />
+          <span>
+            {field.label}
+            <FieldDescription description={field.description} />
+          </span>
+        </label>
+      )
+    }
+
+    if (field.options && field.options.length > 0 && fieldType === "select") {
+      return (
+        <div key={field.name} className="space-y-1">
+          <label htmlFor={inputId} className="block text-xs text-muted-foreground">
+            {field.label}
+          </label>
+          <select
+            id={inputId}
+            value={value}
+            disabled={busy !== null}
+            onChange={(event) => setFieldDraft(accountId, field.name, event.target.value)}
+            className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+          >
+            {field.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <FieldDescription description={field.description} />
+        </div>
+      )
+    }
+
+    if (field.options && field.options.length > 0) {
+      return (
+        <div key={field.name} className="space-y-1">
+          <label className="block text-xs text-muted-foreground">{field.label}</label>
+          <Tabs value={value} onValueChange={(nextValue) => setFieldDraft(accountId, field.name, nextValue)}>
+            <TabsList className="h-8 w-full">
+              {field.options.map((option) => (
+                <TabsTrigger key={option.value} value={option.value} className="text-xs" disabled={busy !== null}>
+                  {option.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          <FieldDescription description={field.description} />
+        </div>
+      )
+    }
+
+    if (fieldType === "textarea") {
+      return (
+        <div key={field.name} className="space-y-1 sm:col-span-2">
+          <label htmlFor={inputId} className="block text-xs text-muted-foreground">
+            {field.label}
+            {field.required ? "" : " (optional)"}
+          </label>
+          <textarea
+            id={inputId}
+            value={value}
+            onChange={(event) => setFieldDraft(accountId, field.name, event.target.value)}
+            className="min-h-20 w-full rounded-md border border-input bg-background px-2 py-2 text-xs"
+            placeholder={field.placeholder ?? field.label}
+          />
+          <FieldDescription description={field.description} />
+        </div>
+      )
+    }
+
+    return (
+      <div key={field.name} className="space-y-1">
+        <label htmlFor={inputId} className="block text-xs text-muted-foreground">
+          {field.label}
+          {field.required ? "" : " (optional)"}
+        </label>
+        <input
+          id={inputId}
+          type={fieldType === "password" ? "password" : "text"}
+          value={value}
+          onChange={(event) => setFieldDraft(accountId, field.name, event.target.value)}
+          className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+          placeholder={field.placeholder ?? field.label}
+          autoComplete="off"
+        />
+        <FieldDescription description={field.description} />
+      </div>
+    )
   }
 
   if (plugins.length === 0) return null
@@ -398,6 +566,9 @@ export function AccountSettingsSection({
                         const status = accountStatus(account, Boolean(credentialsById[account.id]))
                         const accountExpanded = expandedById[account.id] === true
                         const labelValue = labelDraftById[account.id] ?? account.label
+                        const usesCredentialFields = strategy ? usesFieldCredentialForm(strategy) : false
+                        const primaryCredentialFields = strategy?.fields.filter((field) => !field.advanced) ?? []
+                        const advancedCredentialFields = strategy?.fields.filter((field) => field.advanced) ?? []
                         return (
                           <SortableAccountCard key={account.id} accountId={account.id} className={cn("rounded-md border bg-card p-2 space-y-2", !account.enabled && "opacity-75")}>
                             {({ dragAttributes, dragListeners }) => (
@@ -478,6 +649,25 @@ export function AccountSettingsSection({
                                           </Button>
                                         )}
                                       </div>
+                                    ) : usesCredentialFields ? (
+                                      <>
+                                        <div className="space-y-2">
+                                          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                            {primaryCredentialFields.map((field) => renderCredentialField(account.id, field))}
+                                          </div>
+                                          {advancedCredentialFields.length > 0 && (
+                                            <details className="rounded-md border border-dashed bg-muted/30 px-2 py-1">
+                                              <summary className="cursor-pointer text-[11px] text-muted-foreground">Advanced fields</summary>
+                                              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                                {advancedCredentialFields.map((field) => renderCredentialField(account.id, field))}
+                                              </div>
+                                            </details>
+                                          )}
+                                        </div>
+                                        <Button type="button" size="xs" disabled={busy !== null} onClick={() => run(`save:${account.id}`, () => saveFieldCredentials(plugin, account, strategy))}>
+                                          Save credentials
+                                        </Button>
+                                      </>
                                     ) : (
                                       <>
                                         <textarea

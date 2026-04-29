@@ -13,8 +13,34 @@
         "id": "apiKey",
         "label": "API Key",
         "kind": "apiKey",
-        "fields": [{ "name": "apiKey", "label": "API Key", "secret": true, "required": true }],
-        "credentialTemplate": { "apiKey": "" },
+        "fields": [
+          { "name": "apiKey", "label": "API Key", "fieldType": "password", "secret": true, "required": true },
+          {
+            "name": "apiRegion",
+            "label": "Region",
+            "fieldType": "segmented",
+            "defaultValue": "global",
+            "options": [
+              { "label": "Global", "value": "global" },
+              { "label": "China", "value": "cn" }
+            ]
+          },
+          {
+            "name": "apiHost",
+            "label": "API Host",
+            "fieldType": "text",
+            "placeholder": "https://api.z.ai",
+            "advanced": true
+          },
+          {
+            "name": "quotaUrl",
+            "label": "Quota URL",
+            "fieldType": "text",
+            "placeholder": "https://api.z.ai/api/monitor/usage/quota/limit",
+            "advanced": true
+          }
+        ],
+        "credentialTemplate": { "apiKey": "", "apiHost": "", "quotaUrl": "", "apiRegion": "" },
         "importSources": [
           {
             "id": "env-api-key",

@@ -47,11 +47,39 @@ pub struct AuthCredentialField {
     pub name: String,
     pub label: String,
     #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub field_type: Option<AuthCredentialFieldType>,
+    #[serde(default)]
     pub secret: bool,
     #[serde(default)]
     pub required: bool,
     #[serde(default)]
     pub placeholder: Option<String>,
+    #[serde(default)]
+    pub default_value: Option<String>,
+    #[serde(default)]
+    pub options: Vec<AuthCredentialFieldOption>,
+    #[serde(default)]
+    pub advanced: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthCredentialFieldOption {
+    pub label: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthCredentialFieldType {
+    Text,
+    Password,
+    Textarea,
+    Select,
+    Segmented,
+    Checkbox,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

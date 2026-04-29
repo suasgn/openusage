@@ -218,7 +218,9 @@ User-Agent: antigravity
 
 Base URLs tried in order:
 1. `https://daily-cloudcode-pa.googleapis.com`
-2. `https://cloudcode-pa.googleapis.com`
+2. `https://daily-cloudcode-pa.sandbox.googleapis.com`
+3. `https://autopush-cloudcode-pa.sandbox.googleapis.com`
+4. `https://cloudcode-pa.googleapis.com`
 
 #### Response
 
