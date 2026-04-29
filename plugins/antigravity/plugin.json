@@ -32,6 +32,9 @@
       }
     ]
   },
+  "links": [
+    { "label": "Site", "url": "https://antigravity.google/" }
+  ],
   "lines": [
     { "type": "progress", "label": "Gemini Pro", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Gemini Flash", "scope": "overview" },

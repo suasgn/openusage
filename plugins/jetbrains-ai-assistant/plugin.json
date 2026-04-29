@@ -6,6 +6,11 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#7d5fe6",
+  "links": [
+    { "label": "Docs", "url": "https://www.jetbrains.com/help/ai-assistant/getting-started-with-ai-assistant.html" },
+    { "label": "Status", "url": "https://status.jetbrains.com/" },
+    { "label": "Account", "url": "https://account.jetbrains.com/licenses" }
+  ],
   "lines": [
     { "type": "progress", "label": "Quota", "scope": "overview", "primaryOrder": 1 },
     { "type": "text", "label": "Used", "scope": "detail" },

@@ -31,6 +31,11 @@
       }
     ]
   },
+  "links": [
+    { "label": "Docs", "url": "https://docs.warp.dev/" },
+    { "label": "Status", "url": "https://status.warp.dev/" },
+    { "label": "Dashboard", "url": "https://app.warp.dev/" }
+  ],
   "lines": [
     { "type": "progress", "label": "Credits", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Add-on Credits", "scope": "overview" },

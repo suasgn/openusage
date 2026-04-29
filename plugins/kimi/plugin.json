@@ -54,6 +54,11 @@
       }
     ]
   },
+  "links": [
+    { "label": "Kimi Code", "url": "https://www.kimi.com/code" },
+    { "label": "Docs", "url": "https://www.kimi.com/code/docs/en/" },
+    { "label": "Console", "url": "https://www.kimi.com/code/console" }
+  ],
   "lines": [
     { "type": "progress", "label": "Session", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Weekly", "scope": "overview", "primaryOrder": 2 }

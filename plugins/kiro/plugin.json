@@ -52,6 +52,10 @@
       }
     ]
   },
+  "links": [
+    { "label": "Docs", "url": "https://kiro.dev/docs/" },
+    { "label": "Dashboard", "url": "https://app.kiro.dev" }
+  ],
   "lines": [
     { "type": "progress", "label": "Credits", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Bonus Credits", "scope": "overview" },

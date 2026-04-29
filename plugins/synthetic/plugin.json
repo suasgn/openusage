@@ -15,6 +15,8 @@
     { "type": "progress", "label": "Search", "scope": "detail" }
   ],
   "links": [
+    { "label": "Docs", "url": "https://dev.synthetic.new/docs/api/overview" },
+    { "label": "Status", "url": "https://status.synthetic.new/" },
     { "label": "Dashboard", "url": "https://synthetic.new/billing" }
   ]
 }

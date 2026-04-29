@@ -48,6 +48,11 @@
       }
     ]
   },
+  "links": [
+    { "label": "Docs", "url": "https://docs.perplexity.ai/" },
+    { "label": "Status", "url": "https://status.perplexity.ai/" },
+    { "label": "Console", "url": "https://console.perplexity.ai" }
+  ],
   "lines": [
     { "type": "progress", "label": "API credits", "scope": "overview", "primaryOrder": 1 },
     { "type": "text", "label": "Queries", "scope": "overview" },

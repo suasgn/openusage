@@ -31,6 +31,10 @@
       }
     ]
   },
+  "links": [
+    { "label": "Docs", "url": "https://ampcode.com/manual" },
+    { "label": "Dashboard", "url": "https://ampcode.com/settings" }
+  ],
   "lines": [
     { "type": "progress", "label": "Free", "scope": "overview", "primaryOrder": 1 },
     { "type": "text", "label": "Bonus", "scope": "detail" },

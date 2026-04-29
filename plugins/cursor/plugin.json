@@ -51,6 +51,7 @@
     ]
   },
   "links": [
+    { "label": "Docs", "url": "https://docs.cursor.com/" },
     { "label": "Status", "url": "https://status.cursor.com/" },
     { "label": "Dashboard", "url": "https://www.cursor.com/dashboard" }
   ],

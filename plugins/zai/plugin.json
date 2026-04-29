@@ -71,6 +71,11 @@
       }
     }
   },
+  "links": [
+    { "label": "Docs", "url": "https://docs.z.ai/" },
+    { "label": "API keys", "url": "https://z.ai/manage-apikey/apikey-list" },
+    { "label": "Billing", "url": "https://z.ai/manage-apikey/billing" }
+  ],
   "lines": [
     { "type": "progress", "label": "Session", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Weekly", "scope": "overview" },

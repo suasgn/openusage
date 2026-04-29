@@ -56,6 +56,11 @@
       }
     ]
   },
+  "links": [
+    { "label": "Docs", "url": "https://docs.github.com/en/copilot" },
+    { "label": "Status", "url": "https://www.githubstatus.com/" },
+    { "label": "Settings", "url": "https://github.com/settings/copilot" }
+  ],
   "lines": [
     { "type": "progress", "label": "Premium", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Chat", "scope": "overview", "primaryOrder": 2 },

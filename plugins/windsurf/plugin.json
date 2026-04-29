@@ -45,6 +45,11 @@
       }
     ]
   },
+  "links": [
+    { "label": "Docs", "url": "https://docs.windsurf.com/" },
+    { "label": "Status", "url": "https://status.windsurf.com/" },
+    { "label": "Account", "url": "https://windsurf.com/account" }
+  ],
   "lines": [
     { "type": "progress", "label": "Daily quota", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Weekly quota", "scope": "overview" },

@@ -82,6 +82,7 @@
     ]
   },
   "links": [
+    { "label": "Docs", "url": "https://docs.anthropic.com/en/docs/claude-code/overview" },
     { "label": "Status", "url": "https://status.anthropic.com/" },
     { "label": "Console", "url": "https://console.anthropic.com/" }
   ],

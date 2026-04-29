@@ -89,6 +89,7 @@
     }
   },
   "links": [
+    { "label": "Docs", "url": "https://developers.openai.com/codex/" },
     { "label": "Status", "url": "https://status.openai.com/" },
     { "label": "Usage dashboard", "url": "https://platform.openai.com/usage" }
   ],

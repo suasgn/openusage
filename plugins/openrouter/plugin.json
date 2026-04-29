@@ -38,6 +38,11 @@
       }
     ]
   },
+  "links": [
+    { "label": "Docs", "url": "https://openrouter.ai/docs" },
+    { "label": "Status", "url": "https://status.openrouter.ai/" },
+    { "label": "Keys", "url": "https://openrouter.ai/keys" }
+  ],
   "lines": [
     { "type": "progress", "label": "Credits", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Key Quota", "scope": "overview" },

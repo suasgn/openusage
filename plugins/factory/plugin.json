@@ -77,6 +77,11 @@
       }
     ]
   },
+  "links": [
+    { "label": "Docs", "url": "https://docs.factory.ai/" },
+    { "label": "Status", "url": "https://status.factory.ai/" },
+    { "label": "Dashboard", "url": "https://app.factory.ai/" }
+  ],
   "lines": [
     { "type": "progress", "label": "Standard", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Premium", "scope": "detail" }

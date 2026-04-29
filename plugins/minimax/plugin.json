@@ -41,6 +41,11 @@
       }
     ]
   },
+  "links": [
+    { "label": "Docs", "url": "https://platform.minimax.io/docs/guides/models-intro" },
+    { "label": "Status", "url": "https://status.minimax.io/" },
+    { "label": "Console", "url": "https://platform.minimax.io/user-center/basic-information" }
+  ],
   "lines": [
     { "type": "progress", "label": "Session", "scope": "overview", "primaryOrder": 1 }
   ]

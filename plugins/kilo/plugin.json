@@ -38,6 +38,11 @@
       }
     ]
   },
+  "links": [
+    { "label": "Docs", "url": "https://kilocode.ai/docs/" },
+    { "label": "Status", "url": "https://status.kilo.ai/" },
+    { "label": "Dashboard", "url": "https://app.kilo.ai/" }
+  ],
   "lines": [
     { "type": "progress", "label": "Credits", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Kilo Pass", "scope": "overview", "primaryOrder": 2 },

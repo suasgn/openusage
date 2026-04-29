@@ -59,6 +59,11 @@
       }
     ]
   },
+  "links": [
+    { "label": "Docs", "url": "https://google-gemini.github.io/gemini-cli/" },
+    { "label": "Status", "url": "https://status.cloud.google.com/" },
+    { "label": "AI Studio", "url": "https://aistudio.google.com/" }
+  ],
   "lines": [
     { "type": "progress", "label": "Pro", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Flash", "scope": "overview", "primaryOrder": 2 },
