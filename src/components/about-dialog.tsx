@@ -4,6 +4,8 @@ import { ChangelogDialog } from "./changelog-dialog";
 import { Button } from "@/components/ui/button";
 import { APP_NAME, APP_NEW_ISSUE_URL, APP_REPO_URL } from "@/lib/brand";
 
+const APP_ICON_URL = "/favicon.svg";
+
 interface AboutDialogProps {
   version: string;
   onClose: () => void;
@@ -28,6 +30,26 @@ function ExternalLink({
     >
       {children}
     </button>
+  );
+}
+
+function AppIcon() {
+  return (
+    <div
+      role="img"
+      aria-label={APP_NAME}
+      className="w-16 h-16 mx-auto mb-3 bg-[#ff6518]"
+      style={{
+        WebkitMaskImage: `url(${APP_ICON_URL})`,
+        WebkitMaskSize: "contain",
+        WebkitMaskRepeat: "no-repeat",
+        WebkitMaskPosition: "center",
+        maskImage: `url(${APP_ICON_URL})`,
+        maskSize: "contain",
+        maskRepeat: "no-repeat",
+        maskPosition: "center",
+      }}
+    />
   );
 }
 
@@ -86,11 +108,7 @@ export function AboutDialog({ version, onClose }: AboutDialogProps) {
       onClick={handleBackdropClick}
     >
       <div className="bg-card rounded-lg border shadow-xl p-6 max-w-xs w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-200">
-        <img
-          src="/icon.png"
-          alt={APP_NAME}
-          className="w-16 h-16 mx-auto mb-3 rounded-xl"
-        />
+        <AppIcon />
 
         <h2 className="text-xl font-semibold mb-1">{APP_NAME}</h2>
 

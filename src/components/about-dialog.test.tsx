@@ -25,6 +25,10 @@ vi.mock("@/hooks/use-changelog", () => ({
 describe("AboutDialog", () => {
   it("renders version and links", () => {
     render(<AboutDialog version="1.2.3" onClose={() => {}} />)
+    const icon = screen.getByRole("img", { name: "OpenBurn" })
+
+    expect(icon).not.toHaveAttribute("src", "/icon.png")
+    expect(icon).toHaveStyle({ maskImage: "url(/favicon.svg)" })
     expect(screen.getByText("OpenBurn")).toBeInTheDocument()
     expect(screen.getByText("v1.2.3")).toBeInTheDocument()
     expect(screen.getByText("GitHub")).toBeInTheDocument()
