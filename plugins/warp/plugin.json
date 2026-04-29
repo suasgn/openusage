@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "warp",
+  "name": "Warp",
+  "version": "0.0.1",
+  "entry": "plugin.js",
+  "icon": "icon.svg",
+  "brandColor": "#938BB4",
+  "auth": {
+    "defaultStrategyId": "apiKey",
+    "strategies": [
+      {
+        "id": "apiKey",
+        "label": "API Key",
+        "kind": "apiKey",
+        "fields": [
+          { "name": "apiKey", "label": "API Key", "fieldType": "password", "secret": true, "required": true }
+        ],
+        "credentialTemplate": { "apiKey": "" },
+        "importSources": [
+          {
+            "id": "env-api-key",
+            "kind": "env",
+            "envs": ["WARP_API_KEY"],
+            "text": {
+              "target": "apiKey",
+              "constants": { "type": "apiKey" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "lines": [
+    { "type": "progress", "label": "Credits", "scope": "overview", "primaryOrder": 1 },
+    { "type": "progress", "label": "Add-on Credits", "scope": "overview" },
+    { "type": "badge", "label": "Status", "scope": "overview" }
+  ]
+}
