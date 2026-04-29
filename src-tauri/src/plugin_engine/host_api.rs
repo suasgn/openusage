@@ -385,6 +385,9 @@ fn redact_body(body: &str) -> String {
         "authorization",
         "bearer",
         "credential",
+        "hash",
+        "key_hash",
+        "keyHash",
         "session_token",
         "sessionToken",
         "auth_token",
@@ -3015,6 +3018,14 @@ mod tests {
         let body = r#"{"key": "sk-1234567890abcdefghij"}"#;
         let redacted = redact_body(body);
         assert!(redacted.contains("sk-1...ghij"));
+    }
+
+    #[test]
+    fn redact_body_redacts_api_key_hash_fields() {
+        let body = r#"{"hash": "or-key-hash-1234567890", "keyHash": "or-key-hash-abcdef1234"}"#;
+        let redacted = redact_body(body);
+        assert!(!redacted.contains("or-key-hash-1234567890"));
+        assert!(!redacted.contains("or-key-hash-abcdef1234"));
     }
 
     #[test]

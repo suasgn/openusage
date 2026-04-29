@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "openrouter",
+  "name": "OpenRouter",
+  "version": "0.0.1",
+  "entry": "plugin.js",
+  "icon": "icon.svg",
+  "brandColor": "#6467F2",
+  "auth": {
+    "defaultStrategyId": "apiKey",
+    "strategies": [
+      {
+        "id": "apiKey",
+        "label": "API Key",
+        "kind": "apiKey",
+        "fields": [
+          { "name": "apiKey", "label": "API Key", "fieldType": "password", "secret": true, "required": true },
+          {
+            "name": "apiHost",
+            "label": "API Host",
+            "fieldType": "text",
+            "placeholder": "https://openrouter.ai/api/v1",
+            "advanced": true
+          }
+        ],
+        "credentialTemplate": { "apiKey": "", "apiHost": "" },
+        "importSources": [
+          {
+            "id": "env-api-key",
+            "kind": "env",
+            "envs": ["OPENROUTER_API_KEY"],
+            "text": {
+              "target": "apiKey",
+              "constants": { "type": "apiKey" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "lines": [
+    { "type": "progress", "label": "Credits", "scope": "overview", "primaryOrder": 1 },
+    { "type": "progress", "label": "Key Quota", "scope": "overview" },
+    { "type": "text", "label": "Rate Limit", "scope": "detail" }
+  ]
+}
