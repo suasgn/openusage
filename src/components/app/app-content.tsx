@@ -22,6 +22,7 @@ type AppContentDerivedProps = {
   settingsPlugins: SettingsPluginState[]
   selectedPlugin: DisplayPluginState | null
   accountOrderByPlugin?: AccountOrderByPlugin
+  opencodeAuthAccountIds?: string[]
 }
 
 export type AppContentActionProps = {
@@ -47,6 +48,7 @@ export function AppContent({
   settingsPlugins,
   selectedPlugin,
   accountOrderByPlugin = {},
+  opencodeAuthAccountIds = [],
   onRetryPlugin,
   onAccountChanged,
   onAccountOrderChanged,
@@ -92,6 +94,7 @@ export function AppContent({
       <OverviewPage
         plugins={displayPlugins}
         accountOrderByPlugin={accountOrderByPlugin}
+        opencodeAuthAccountIds={opencodeAuthAccountIds}
         onRetryPlugin={onRetryPlugin}
         displayMode={displayMode}
         resetTimerDisplayMode={resetTimerDisplayMode}
@@ -134,6 +137,7 @@ export function AppContent({
     <ProviderDetailPage
       plugin={selectedPlugin}
       accountOrder={selectedPlugin ? accountOrderByPlugin[selectedPlugin.meta.id] ?? [] : []}
+      opencodeAuthAccountIds={opencodeAuthAccountIds}
       onRetry={handleRetry}
       displayMode={displayMode}
       resetTimerDisplayMode={resetTimerDisplayMode}

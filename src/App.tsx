@@ -10,6 +10,7 @@ import { useSettingsPluginList } from "@/hooks/app/use-settings-plugin-list"
 import { useSettingsSystemActions } from "@/hooks/app/use-settings-system-actions"
 import { useSettingsTheme } from "@/hooks/app/use-settings-theme"
 import { useTrayIcon } from "@/hooks/app/use-tray-icon"
+import { listOpencodeAuthAccountMatches } from "@/lib/accounts"
 import { loadAccountOrderByPlugin, REFRESH_COOLDOWN_MS, type AccountOrderByPlugin } from "@/lib/settings"
 import { type PluginContextAction } from "@/components/side-nav"
 import { useAppPluginStore } from "@/stores/app-plugin-store"
@@ -17,6 +18,7 @@ import { useAppPreferencesStore } from "@/stores/app-preferences-store"
 import { useAppUiStore } from "@/stores/app-ui-store"
 
 const TRAY_PROBE_DEBOUNCE_MS = 500
+const OPENCODE_AUTH_REFRESH_MS = 5000
 
 function App() {
   const {
@@ -75,8 +77,18 @@ function App() {
 
   const scheduleProbeTrayUpdateRef = useRef<() => void>(() => {})
   const [accountOrderByPlugin, setAccountOrderByPlugin] = useState<AccountOrderByPlugin>({})
+  const [opencodeAuthAccountIds, setOpencodeAuthAccountIds] = useState<string[]>([])
   const handleProbeResult = useCallback(() => {
     scheduleProbeTrayUpdateRef.current()
+  }, [])
+
+  const refreshOpencodeAuthAccounts = useCallback(() => {
+    listOpencodeAuthAccountMatches()
+      .then((ids) => setOpencodeAuthAccountIds(Array.isArray(ids) ? ids : []))
+      .catch((error) => {
+        console.error("Failed to read OpenCode auth account:", error)
+        setOpencodeAuthAccountIds([])
+      })
   }, [])
 
   useEffect(() => {
@@ -92,6 +104,16 @@ function App() {
       mounted = false
     }
   }, [])
+
+  useEffect(() => {
+    refreshOpencodeAuthAccounts()
+    const interval = window.setInterval(refreshOpencodeAuthAccounts, OPENCODE_AUTH_REFRESH_MS)
+    window.addEventListener("focus", refreshOpencodeAuthAccounts)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener("focus", refreshOpencodeAuthAccounts)
+    }
+  }, [refreshOpencodeAuthAccounts])
 
   const {
     pluginStates,
@@ -233,6 +255,7 @@ function App() {
       navPlugins={navPlugins}
       displayPlugins={displayPlugins}
       settingsPlugins={settingsPlugins}
+      opencodeAuthAccountIds={opencodeAuthAccountIds}
       autoUpdateNextAt={autoUpdateNextAt}
       selectedPlugin={selectedPlugin}
       accountOrderByPlugin={accountOrderByPlugin}

@@ -18,6 +18,7 @@ interface ProviderCardProps {
   plan?: string
   links?: PluginLink[]
   accountOrder?: string[]
+  opencodeAuthAccountIds?: string[]
   showSeparator?: boolean
   loading?: boolean
   error?: string | null
@@ -37,6 +38,14 @@ type AccountLineGroup = {
   accountId: string | null
   plan: string | null
   lines: MetricLine[]
+}
+
+function OpenCodeIcon({ className }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="currentColor" className={className} aria-hidden="true">
+      <path fillRule="evenodd" clipRule="evenodd" d="M80 88H20V12H80V88ZM35 27H65V72H35V27Z" />
+    </svg>
+  )
 }
 
 function removeAccountPrefix(line: MetricLine): {
@@ -70,6 +79,7 @@ export function ProviderCard({
   plan,
   links = [],
   accountOrder = [],
+  opencodeAuthAccountIds = [],
   showSeparator = true,
   loading = false,
   error = null,
@@ -149,6 +159,11 @@ export function ProviderCard({
 
     return { ungrouped, groups }
   }, [accountOrder, filteredLines])
+
+  const opencodeAuthAccountIdSet = useMemo(
+    () => new Set(opencodeAuthAccountIds),
+    [opencodeAuthAccountIds]
+  )
 
   const hasResetCountdown = filteredLines.some(
     (line) => line.type === "progress" && Boolean(line.resetsAt)
@@ -334,6 +349,7 @@ export function ProviderCard({
               const contentLines = group.lines.filter((line) => !isErrorBadge(line))
               const errorLines = group.lines.filter(isErrorBadge)
               const hasGroupCard = contentLines.length > 0 || Boolean(group.plan)
+              const isOpenCodeAuthAccount = group.accountId ? opencodeAuthAccountIdSet.has(group.accountId) : false
 
               return (
                 <div key={`${group.accountLabel}:${group.accountId ?? ""}`} className="space-y-2">
@@ -341,18 +357,38 @@ export function ProviderCard({
                     <div className="rounded-md border bg-muted/40 p-2">
                       <div className="flex items-center justify-between gap-2 mb-2">
                         {group.accountId ? (
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={(props) => (
-                                <p {...props} className="text-xs text-muted-foreground font-medium truncate">
-                                  {group.accountLabel}
-                                </p>
-                              )}
-                            />
-                            <TooltipContent side="top" className="text-xs">
-                              Account ID: {group.accountId}
-                            </TooltipContent>
-                          </Tooltip>
+                          <div className="flex min-w-0 items-center gap-1">
+                            <Tooltip>
+                              <TooltipTrigger
+                                render={(props) => (
+                                  <p {...props} className="min-w-0 truncate text-xs font-medium text-muted-foreground">
+                                    {group.accountLabel}
+                                  </p>
+                                )}
+                              />
+                              <TooltipContent side="top" className="text-xs">
+                                Account ID: {group.accountId}
+                              </TooltipContent>
+                            </Tooltip>
+                            {isOpenCodeAuthAccount && (
+                              <Tooltip>
+                                <TooltipTrigger
+                                  render={(props) => (
+                                    <span
+                                      {...props}
+                                      aria-label="Current OpenCode auth account"
+                                      className="inline-flex size-4 flex-shrink-0 items-center justify-center text-foreground"
+                                    >
+                                      <OpenCodeIcon className="size-3" />
+                                    </span>
+                                  )}
+                                />
+                                <TooltipContent side="top" className="text-xs">
+                                  Current OpenCode auth.json account
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
+                          </div>
                         ) : (
                           <p className="text-xs text-muted-foreground font-medium truncate">
                             {group.accountLabel}

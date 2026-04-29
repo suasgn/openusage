@@ -78,6 +78,10 @@ export function syncAccountToOpencodeAuth(accountId: string): Promise<ExternalAu
   return invoke<ExternalAuthSyncResult>("sync_account_to_opencode_auth", { accountId })
 }
 
+export function listOpencodeAuthAccountMatches(): Promise<string[]> {
+  return invoke<string[]>("list_opencode_auth_account_matches")
+}
+
 export function startAccountAuth(pluginId: string, accountId: string): Promise<AccountAuthStartResponse> {
   return invoke<AccountAuthStartResponse>("start_account_auth", { pluginId, accountId })
 }

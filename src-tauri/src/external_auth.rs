@@ -114,6 +114,46 @@ pub fn rotate_opencode_plugin<R: Runtime>(
     )))
 }
 
+pub fn list_opencode_auth_account_matches<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    state: &Mutex<AppState>,
+    store: &AccountStore,
+) -> Result<Vec<String>> {
+    let accounts = store.list_accounts()?;
+    let plugins = {
+        let locked = state
+            .lock()
+            .map_err(|_| BackendError::Plugin("plugin state poisoned".to_string()))?;
+        locked.plugins.clone()
+    };
+    let mut matches = Vec::new();
+
+    for account in accounts {
+        let Some(plugin) = plugins
+            .iter()
+            .find(|plugin| plugin.manifest.id == account.plugin_id)
+        else {
+            continue;
+        };
+        let Some(config) = plugin
+            .manifest
+            .external_auth
+            .as_ref()
+            .and_then(|external| external.opencode.as_ref())
+        else {
+            continue;
+        };
+        if !has_supported_strategy(plugin, config, &account) {
+            continue;
+        }
+        if account_matches_current_opencode_auth(app, store, plugin, config, &account)? {
+            matches.push(account.id);
+        }
+    }
+
+    Ok(matches)
+}
+
 fn sync_account_with_plugin<R: Runtime>(
     app: &tauri::AppHandle<R>,
     store: &AccountStore,

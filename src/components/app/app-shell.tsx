@@ -17,6 +17,7 @@ type AppShellProps = {
   navPlugins: NavPlugin[]
   displayPlugins: DisplayPluginState[]
   settingsPlugins: SettingsPluginState[]
+  opencodeAuthAccountIds?: string[]
   autoUpdateNextAt: number | null
   selectedPlugin: DisplayPluginState | null
   accountOrderByPlugin?: AccountOrderByPlugin
@@ -31,6 +32,7 @@ export function AppShell({
   navPlugins,
   displayPlugins,
   settingsPlugins,
+  opencodeAuthAccountIds,
   autoUpdateNextAt,
   selectedPlugin,
   accountOrderByPlugin,
@@ -97,6 +99,7 @@ export function AppShell({
                   {...appContentProps}
                   displayPlugins={displayPlugins}
                   settingsPlugins={settingsPlugins}
+                  opencodeAuthAccountIds={opencodeAuthAccountIds}
                   selectedPlugin={selectedPlugin}
                   accountOrderByPlugin={accountOrderByPlugin}
                 />

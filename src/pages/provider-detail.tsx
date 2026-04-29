@@ -5,6 +5,7 @@ import type { DisplayMode, ResetTimerDisplayMode } from "@/lib/settings"
 interface ProviderDetailPageProps {
   plugin: PluginDisplayState | null
   accountOrder?: string[]
+  opencodeAuthAccountIds?: string[]
   onRetry?: () => void
   displayMode: DisplayMode
   resetTimerDisplayMode: ResetTimerDisplayMode
@@ -14,6 +15,7 @@ interface ProviderDetailPageProps {
 export function ProviderDetailPage({
   plugin,
   accountOrder = [],
+  opencodeAuthAccountIds = [],
   onRetry,
   displayMode,
   resetTimerDisplayMode,
@@ -38,6 +40,7 @@ export function ProviderDetailPage({
       lines={plugin.data?.lines ?? []}
       skeletonLines={plugin.meta.lines}
       accountOrder={accountOrder}
+      opencodeAuthAccountIds={opencodeAuthAccountIds}
       lastManualRefreshAt={plugin.lastManualRefreshAt}
       lastUpdatedAt={plugin.lastUpdatedAt}
       onRetry={onRetry}

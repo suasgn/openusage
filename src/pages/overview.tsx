@@ -5,6 +5,7 @@ import type { AccountOrderByPlugin, DisplayMode, ResetTimerDisplayMode } from "@
 interface OverviewPageProps {
   plugins: PluginDisplayState[]
   accountOrderByPlugin?: AccountOrderByPlugin
+  opencodeAuthAccountIds?: string[]
   onRetryPlugin?: (pluginId: string) => void
   displayMode: DisplayMode
   resetTimerDisplayMode: ResetTimerDisplayMode
@@ -14,6 +15,7 @@ interface OverviewPageProps {
 export function OverviewPage({
   plugins,
   accountOrderByPlugin,
+  opencodeAuthAccountIds = [],
   onRetryPlugin,
   displayMode,
   resetTimerDisplayMode,
@@ -40,6 +42,7 @@ export function OverviewPage({
           lines={plugin.data?.lines ?? []}
           skeletonLines={plugin.meta.lines}
           accountOrder={accountOrderByPlugin?.[plugin.meta.id] ?? []}
+          opencodeAuthAccountIds={opencodeAuthAccountIds}
           lastManualRefreshAt={plugin.lastManualRefreshAt}
           lastUpdatedAt={plugin.lastUpdatedAt}
           onRetry={onRetryPlugin ? () => onRetryPlugin(plugin.meta.id) : undefined}

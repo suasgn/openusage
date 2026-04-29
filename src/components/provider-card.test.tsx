@@ -132,6 +132,23 @@ describe("ProviderCard", () => {
     expect(text.indexOf("Personal")).toBeLessThan(text.indexOf("Work"))
   })
 
+  it("marks the account currently used by OpenCode auth", () => {
+    render(
+      <ProviderCard
+        name="Accounts"
+        displayMode="used"
+        opencodeAuthAccountIds={["acc-1"]}
+        lines={[
+          { type: "progress", label: "Work @@ acc-1 :: Usage", used: 20, limit: 100, format: { kind: "percent" } },
+          { type: "progress", label: "Personal @@ acc-2 :: Usage", used: 40, limit: 100, format: { kind: "percent" } },
+        ]}
+      />
+    )
+
+    expect(screen.getByLabelText("Current OpenCode auth account")).toBeInTheDocument()
+    expect(screen.getByText("Current OpenCode auth.json account")).toBeInTheDocument()
+  })
+
   it("shows account plan badges and scoped errors with account context", () => {
     render(
       <ProviderCard

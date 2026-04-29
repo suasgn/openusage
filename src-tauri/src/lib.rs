@@ -858,6 +858,16 @@ fn sync_account_to_opencode_auth(
 }
 
 #[tauri::command]
+fn list_opencode_auth_account_matches(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Mutex<AppState>>,
+    store: tauri::State<'_, account_store::AccountStore>,
+) -> Result<Vec<String>, String> {
+    external_auth::list_opencode_auth_account_matches(&app, state.inner(), store.inner())
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 async fn start_account_auth(
     app: tauri::AppHandle,
     auth_state: tauri::State<'_, auth::AuthState>,
@@ -941,6 +951,7 @@ pub fn run() {
             has_account_credentials,
             clear_account_credentials,
             sync_account_to_opencode_auth,
+            list_opencode_auth_account_matches,
             start_account_auth,
             finish_account_auth,
             cancel_account_auth,
