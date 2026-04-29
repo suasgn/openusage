@@ -1,0 +1,9 @@
+export const APP_NAME = "OpenBurn"
+export const APP_REPO_OWNER = "suasgn"
+export const APP_REPO_NAME = "openburn"
+export const APP_REPO = `${APP_REPO_OWNER}/${APP_REPO_NAME}`
+export const APP_REPO_URL = `https://github.com/${APP_REPO}`
+export const APP_ISSUES_URL = `${APP_REPO_URL}/issues`
+export const APP_NEW_ISSUE_URL = `${APP_ISSUES_URL}/new/choose`
+export const APP_RELEASES_URL = `${APP_REPO_URL}/releases`
+export const APP_GITHUB_API_REPO_URL = `https://api.github.com/repos/${APP_REPO}`

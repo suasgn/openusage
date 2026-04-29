@@ -14,7 +14,7 @@ Tracks [OpenRouter](https://openrouter.ai) credits and API key limits.
 ## Setup
 
 1. Create an API key in [OpenRouter Keys](https://openrouter.ai/settings/keys)
-2. Add an OpenRouter account in OpenUsage settings, or set `OPENROUTER_API_KEY`
+2. Add an OpenRouter account in OpenBurn settings, or set `OPENROUTER_API_KEY`
 
 Optional account JSON fields:
 

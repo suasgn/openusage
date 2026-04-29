@@ -14,7 +14,7 @@ Tracks [OpenCode](https://opencode.ai) subscription usage using the logged-in br
 
 ## Setup
 
-1. Add an OpenCode account in OpenUsage settings
+1. Add an OpenCode account in OpenBurn settings
 2. Choose **Cookie Login**
 3. Sign in in the opened OpenCode window and wait until it reaches a `/workspace/wrk_...` URL
 

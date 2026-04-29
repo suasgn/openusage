@@ -14,7 +14,7 @@ Tracks [Kilo](https://kilo.ai) credit blocks and Kilo Pass usage.
 
 ## Setup
 
-1. Add a Kilo account in OpenUsage settings, or set `KILO_API_KEY`
+1. Add a Kilo account in OpenBurn settings, or set `KILO_API_KEY`
 2. Enter the Kilo API key/token
 
 Optional account JSON fields:
@@ -30,7 +30,7 @@ Accepted API key aliases: `api_key`, `token`, `access_token`, `authToken`.
 
 ## Endpoints
 
-OpenUsage calls one tRPC batch request with two procedures:
+OpenBurn calls one tRPC batch request with two procedures:
 
 - `user.getCreditBlocks`
 - `kiloPass.getState`

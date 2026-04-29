@@ -1,6 +1,14 @@
 import { Image } from "@tauri-apps/api/image"
 import type { MenubarIconStyle } from "@/lib/settings"
 import type { TrayPrimaryBar } from "@/lib/tray-primary-progress"
+import appIconSvgRaw from "@/assets/app-icon.svg?raw"
+
+function extractSvgBody(svgRaw: string): string {
+  const match = svgRaw.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i)
+  return (match?.[1] ?? svgRaw).trim()
+}
+
+const APP_ICON_MARKUP = extractSvgBody(appIconSvgRaw)
 
 const PROVIDER_ICON_SHRINK_PX = 1
 const PROVIDER_ICON_VERTICAL_NUDGE_PX = 0
@@ -204,14 +212,19 @@ export function makeTrayBarsSvg(args: {
     `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`
   )
 
-  if (style === "provider") {
+  if (style === "provider" || style === "app") {
     const hasText = typeof text === "string" && text.length > 0
     const iconSize = Math.max(6, Math.round(sizePx - 2 * layout.pad * 0.5) - (hasText ? PROVIDER_ICON_SHRINK_PX : 0))
     const x = layout.barsX
     const y = Math.round((height - iconSize) / 2) + (hasText ? PROVIDER_ICON_VERTICAL_NUDGE_PX : 0)
     const href = typeof providerIconUrl === "string" ? providerIconUrl.trim() : ""
 
-    if (href.length > 0) {
+    if (style === "app") {
+      const scale = iconSize / 24
+      parts.push(
+        `<g transform="translate(${x} ${y}) scale(${scale})" color="black" opacity="${BARS_FILL_OPACITY}">${APP_ICON_MARKUP}</g>`
+      )
+    } else if (href.length > 0) {
       parts.push(
         `<image x="${x}" y="${y}" width="${iconSize}" height="${iconSize}" href="${escapeXmlText(href)}" preserveAspectRatio="xMidYMid meet" />`
       )

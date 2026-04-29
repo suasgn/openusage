@@ -516,7 +516,7 @@ describe("App", () => {
     })
 
     await waitFor(() => expect(state.traySetTitleMock).toHaveBeenCalledWith("70%"))
-    await waitFor(() => expect(state.traySetTooltipMock).toHaveBeenCalledWith("OpenUsage\nAlpha: 70%"))
+    await waitFor(() => expect(state.traySetTooltipMock).toHaveBeenCalledWith("OpenBurn\nAlpha: 70%"))
     await waitFor(() => {
       const latestCall = state.renderTrayBarsIconMock.mock.calls.at(-1)?.[0]
       expect(latestCall.bars).toEqual([{ id: "overview", fraction: 0.7 }])
@@ -720,13 +720,13 @@ describe("App", () => {
     render(<App />)
 
     // Open about via version button in footer
-    await userEvent.click(await screen.findByRole("button", { name: /OpenUsage/i }))
-    await screen.findByText("Built by")
+    await userEvent.click(await screen.findByRole("button", { name: /OpenBurn/i }))
+    await screen.findByText("Know your AI spend before it surprises you.")
 
     // Close about via ESC key
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
     await waitFor(() => {
-      expect(screen.queryByText("Built by")).not.toBeInTheDocument()
+      expect(screen.queryByText("Know your AI spend before it surprises you.")).not.toBeInTheDocument()
     })
   })
 

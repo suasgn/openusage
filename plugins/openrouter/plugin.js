@@ -99,8 +99,8 @@
       headers: {
         Authorization: authHeader(credentials.apiKey),
         Accept: "application/json",
-        "User-Agent": "openusage",
-        "X-Title": "OpenUsage",
+        "User-Agent": "openburn",
+        "X-Title": "OpenBurn",
       },
       timeoutMs: 10000,
     })
@@ -115,8 +115,8 @@
         headers: {
           Authorization: authHeader(credentials.apiKey),
           Accept: "application/json",
-          "User-Agent": "openusage",
-          "X-Title": "OpenUsage",
+          "User-Agent": "openburn",
+          "X-Title": "OpenBurn",
         },
         timeoutMs: 3000,
       })

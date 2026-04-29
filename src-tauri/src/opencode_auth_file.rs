@@ -22,6 +22,20 @@ pub fn write_auth(
     Ok(auth_file_path)
 }
 
+pub fn current_auth_matches(
+    config: &OpenCodeExternalAuth,
+    strategy: &OpenCodeExternalAuthStrategy,
+    credentials: &serde_json::Value,
+) -> Result<bool> {
+    let auth_file_path = resolve_auth_file_path()?;
+    let auth_entries = read_auth_entries(&auth_file_path)?;
+    let Some(current) = auth_entries.get(non_empty_auth_key(config)?.as_str()) else {
+        return Ok(false);
+    };
+    let candidate = build_opencode_auth_payload(strategy, credentials)?;
+    Ok(auth_payload_matches(current, &candidate))
+}
+
 fn build_opencode_auth_payload(
     strategy: &OpenCodeExternalAuthStrategy,
     credentials: &serde_json::Value,
@@ -62,6 +76,37 @@ fn build_opencode_auth_payload(
             Ok(serde_json::Value::Object(payload))
         }
     }
+}
+
+fn auth_payload_matches(current: &serde_json::Value, candidate: &serde_json::Value) -> bool {
+    match (current.get("type"), candidate.get("type")) {
+        (Some(current_type), Some(candidate_type)) if current_type != candidate_type => false,
+        _ => {
+            if current.get("type").and_then(|value| value.as_str()) == Some("api") {
+                return same_non_empty_string(current, candidate, "key");
+            }
+            if current.get("type").and_then(|value| value.as_str()) == Some("oauth") {
+                return same_non_empty_string(current, candidate, "accountId")
+                    || same_non_empty_string(current, candidate, "refresh")
+                    || same_non_empty_string(current, candidate, "access");
+            }
+            current == candidate
+        }
+    }
+}
+
+fn same_non_empty_string(
+    current: &serde_json::Value,
+    candidate: &serde_json::Value,
+    field: &str,
+) -> bool {
+    let Some(current_value) = current.get(field).and_then(|value| value.as_str()) else {
+        return false;
+    };
+    let Some(candidate_value) = candidate.get(field).and_then(|value| value.as_str()) else {
+        return false;
+    };
+    !current_value.trim().is_empty() && current_value == candidate_value
 }
 
 fn field_pointer<'a>(strategy: &'a OpenCodeExternalAuthStrategy, name: &str) -> Result<&'a str> {
@@ -282,5 +327,41 @@ mod tests {
             payload,
             serde_json::json!({ "type": "api", "key": "zai-key" })
         );
+    }
+
+    #[test]
+    fn matches_api_payload_by_key() {
+        assert!(auth_payload_matches(
+            &serde_json::json!({ "type": "api", "key": "same" }),
+            &serde_json::json!({ "type": "api", "key": "same" })
+        ));
+        assert!(!auth_payload_matches(
+            &serde_json::json!({ "type": "api", "key": "one" }),
+            &serde_json::json!({ "type": "api", "key": "two" })
+        ));
+    }
+
+    #[test]
+    fn matches_oauth_payload_by_stable_fields() {
+        assert!(auth_payload_matches(
+            &serde_json::json!({
+                "type": "oauth",
+                "access": "new-access",
+                "refresh": "same-refresh",
+                "expires": 1770000100,
+                "accountId": "acct_123"
+            }),
+            &serde_json::json!({
+                "type": "oauth",
+                "access": "old-access",
+                "refresh": "same-refresh",
+                "expires": 1770000000,
+                "accountId": "acct_123"
+            })
+        ));
+        assert!(!auth_payload_matches(
+            &serde_json::json!({ "type": "oauth", "refresh": "one" }),
+            &serde_json::json!({ "type": "oauth", "refresh": "two" })
+        ));
     }
 }

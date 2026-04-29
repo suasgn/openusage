@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ChangelogDialog } from "./changelog-dialog";
 import { Button } from "@/components/ui/button";
+import { APP_NAME, APP_NEW_ISSUE_URL, APP_REPO_URL } from "@/lib/brand";
 
 interface AboutDialogProps {
   version: string;
@@ -87,11 +88,11 @@ export function AboutDialog({ version, onClose }: AboutDialogProps) {
       <div className="bg-card rounded-lg border shadow-xl p-6 max-w-xs w-full mx-4 text-center animate-in fade-in zoom-in-95 duration-200">
         <img
           src="/icon.png"
-          alt="OpenUsage"
+          alt={APP_NAME}
           className="w-16 h-16 mx-auto mb-3 rounded-xl"
         />
 
-        <h2 className="text-xl font-semibold mb-1">OpenUsage</h2>
+        <h2 className="text-xl font-semibold mb-1">{APP_NAME}</h2>
 
         <div className="flex flex-col items-center gap-2 mb-4">
           <span className="inline-block text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
@@ -108,29 +109,19 @@ export function AboutDialog({ version, onClose }: AboutDialogProps) {
         </div>
 
         <div className="text-sm text-muted-foreground space-y-1">
-          <p>
-            Built by{" "}
-            <ExternalLink href="https://itsbyrob.in/x">Robin Ebers</ExternalLink>
-          </p>
+          <p>Know your AI spend before it surprises you.</p>
           <p>
             Open source on{" "}
-            <ExternalLink href="https://github.com/robinebers/openusage">
-              GitHub
-            </ExternalLink>
+            <ExternalLink href={APP_REPO_URL}>GitHub</ExternalLink>
+          </p>
+          <p>
+            <ExternalLink href={APP_NEW_ISSUE_URL}>Report an issue</ExternalLink>
           </p>
           <p className="text-xs pt-1">
-            Maintainers:{" "}
-            <ExternalLink href="https://github.com/validatedev">
-              validatedev
-            </ExternalLink>
-            ,{" "}
-            <ExternalLink href="https://github.com/davidarny">
-              davidarny
-            </ExternalLink>
+            MIT License - Contributions welcome
           </p>
         </div>
       </div>
     </div>
   );
 }
-

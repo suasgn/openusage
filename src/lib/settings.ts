@@ -20,7 +20,7 @@ export type DisplayMode = "used" | "left";
 
 export type ResetTimerDisplayMode = "relative" | "absolute";
 
-export type MenubarIconStyle = "provider" | "bars" | "donut";
+export type MenubarIconStyle = "provider" | "app" | "bars" | "donut";
 
 export type GlobalShortcut = string | null;
 
@@ -49,10 +49,11 @@ const AUTO_UPDATE_INTERVALS: AutoUpdateIntervalMinutes[] = [5, 15, 30, 60];
 const THEME_MODES: ThemeMode[] = ["system", "light", "dark"];
 const DISPLAY_MODES: DisplayMode[] = ["used", "left"];
 const RESET_TIMER_DISPLAY_MODES: ResetTimerDisplayMode[] = ["relative", "absolute"];
-const MENUBAR_ICON_STYLES: MenubarIconStyle[] = ["provider", "donut", "bars"];
+const MENUBAR_ICON_STYLES: MenubarIconStyle[] = ["provider", "app", "donut", "bars"];
 
 export const MENUBAR_ICON_STYLE_OPTIONS: { value: MenubarIconStyle; label: string }[] = [
   { value: "provider", label: "Plugin" },
+  { value: "app", label: "App" },
   { value: "donut", label: "Donut" },
   { value: "bars", label: "Bars" },
 ];
@@ -282,6 +283,8 @@ export async function migrateLegacyTraySettings(): Promise<void> {
       await store.set(MENUBAR_ICON_STYLE_KEY, "bars");
     } else if (legacyTrayStyle === "circle") {
       await store.set(MENUBAR_ICON_STYLE_KEY, "donut");
+    } else if (legacyTrayStyle === "app") {
+      await store.set(MENUBAR_ICON_STYLE_KEY, "app");
     }
   }
 

@@ -243,7 +243,16 @@ describe("settings", () => {
     expect(storeState.has("trayIconStyle")).toBe(false)
   })
 
-  it("does not set menubarIconStyle when legacy trayIconStyle is non-bars", async () => {
+  it("migrates legacy trayIconStyle=app to menubarIconStyle=app when new key not set", async () => {
+    storeState.set("trayIconStyle", "app")
+
+    await migrateLegacyTraySettings()
+
+    expect(storeState.get("menubarIconStyle")).toBe("app")
+    expect(storeState.has("trayIconStyle")).toBe(false)
+  })
+
+  it("does not set menubarIconStyle when legacy trayIconStyle is unsupported", async () => {
     storeState.set("trayIconStyle", "provider")
 
     await migrateLegacyTraySettings()
@@ -276,6 +285,11 @@ describe("settings", () => {
     await expect(loadMenubarIconStyle()).resolves.toBe("donut")
   })
 
+  it("loads stored menubar app icon style", async () => {
+    storeState.set("menubarIconStyle", "app")
+    await expect(loadMenubarIconStyle()).resolves.toBe("app")
+  })
+
   it("falls back to default for invalid menubar icon style", async () => {
     storeState.set("menubarIconStyle", "invalid")
     await expect(loadMenubarIconStyle()).resolves.toBe(DEFAULT_MENUBAR_ICON_STYLE)
@@ -301,7 +315,7 @@ describe("settings", () => {
 
   it("falls back to nulling legacy keys if delete is unavailable", async () => {
     const { LazyStore } = await import("@tauri-apps/plugin-store")
-    const prototype = LazyStore.prototype as { delete?: (key: string) => Promise<void> }
+    const prototype = LazyStore.prototype as unknown as { delete?: (key: string) => Promise<void> }
     const originalDelete = prototype.delete
 
     // Simulate older store implementation with no delete() method.

@@ -103,7 +103,7 @@
         headers: {
           Authorization: authHeader(credentials.apiKey),
           Accept: "application/json",
-          "User-Agent": "OpenUsage",
+          "User-Agent": "openburn",
         },
         timeoutMs: 10000,
       })

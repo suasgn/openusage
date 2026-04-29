@@ -230,6 +230,18 @@ describe("SettingsPage", () => {
     expect(onMenubarIconStyleChange).toHaveBeenCalledWith("donut")
   })
 
+  it("clicking App triggers onMenubarIconStyleChange(\"app\")", async () => {
+    const onMenubarIconStyleChange = vi.fn()
+    render(
+      <SettingsPage
+        {...defaultProps}
+        onMenubarIconStyleChange={onMenubarIconStyleChange}
+      />
+    )
+    await userEvent.click(screen.getByRole("radio", { name: "App" }))
+    expect(onMenubarIconStyleChange).toHaveBeenCalledWith("app")
+  })
+
   it("does not render removed bar icon controls", () => {
     render(<SettingsPage {...defaultProps} />)
     expect(screen.queryByText("Bar Icon")).not.toBeInTheDocument()

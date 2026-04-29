@@ -23,24 +23,23 @@ vi.mock("@/hooks/use-changelog", () => ({
 }))
 
 describe("AboutDialog", () => {
-  it("renders version, links, and maintainers", () => {
+  it("renders version and links", () => {
     render(<AboutDialog version="1.2.3" onClose={() => {}} />)
-    expect(screen.getByText("OpenUsage")).toBeInTheDocument()
+    expect(screen.getByText("OpenBurn")).toBeInTheDocument()
     expect(screen.getByText("v1.2.3")).toBeInTheDocument()
     expect(screen.getByText("GitHub")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "validatedev" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "davidarny" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Report an issue" })).toBeInTheDocument()
   })
 
-  it("opens maintainer GitHub profiles on click", async () => {
+  it("opens project links on click", async () => {
     render(<AboutDialog version="1.2.3" onClose={() => {}} />)
 
-    await userEvent.click(screen.getByRole("button", { name: "validatedev" }))
-    expect(openerState.openUrlMock).toHaveBeenCalledWith("https://github.com/validatedev")
+    await userEvent.click(screen.getByRole("button", { name: "GitHub" }))
+    expect(openerState.openUrlMock).toHaveBeenCalledWith("https://github.com/suasgn/openburn")
 
     openerState.openUrlMock.mockClear()
-    await userEvent.click(screen.getByRole("button", { name: "davidarny" }))
-    expect(openerState.openUrlMock).toHaveBeenCalledWith("https://github.com/davidarny")
+    await userEvent.click(screen.getByRole("button", { name: "Report an issue" }))
+    expect(openerState.openUrlMock).toHaveBeenCalledWith("https://github.com/suasgn/openburn/issues/new/choose")
   })
 
   it("closes on Escape", async () => {
@@ -61,7 +60,7 @@ describe("AboutDialog", () => {
     await userEvent.keyboard("{Escape}")
 
     expect(onClose).not.toHaveBeenCalled()
-    expect(screen.getByText("OpenUsage")).toBeInTheDocument()
+    expect(screen.getByText("OpenBurn")).toBeInTheDocument()
   })
 
   it("does not close on other keys", async () => {
@@ -80,7 +79,7 @@ describe("AboutDialog", () => {
 
     // Clicking inside the dialog should not close.
     onClose.mockClear()
-    await userEvent.click(screen.getByText("OpenUsage"))
+    await userEvent.click(screen.getByText("OpenBurn"))
     expect(onClose).not.toHaveBeenCalled()
   })
 
@@ -127,4 +126,3 @@ describe("AboutDialog", () => {
     }
   })
 })
-

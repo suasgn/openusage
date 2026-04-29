@@ -69,27 +69,49 @@ pub fn rotate_opencode_plugin<R: Runtime>(
         return sync_account_with_plugin(app, store, &plugin, eligible.remove(0), None);
     }
 
-    let mut best: Option<(AccountRecord, f64)> = None;
+    let mut best_other: Option<(AccountRecord, f64)> = None;
+    let mut best_current: Option<(AccountRecord, f64)> = None;
+    let mut fallback_other: Option<AccountRecord> = None;
     for account in eligible {
+        let is_current =
+            account_matches_current_opencode_auth(app, store, &plugin, config, &account)?;
+        if !is_current && fallback_other.is_none() {
+            fallback_other = Some(account.clone());
+        }
+
         let Some(score) = score_account_usage_left(&plugin_id, &account, &rotation_labels, false)
         else {
             continue;
         };
+
+        let best = if is_current {
+            &mut best_current
+        } else {
+            &mut best_other
+        };
+
         if best
             .as_ref()
             .map(|(_, current_score)| score > *current_score)
             .unwrap_or(true)
         {
-            best = Some((account, score));
+            *best = Some((account, score));
         }
     }
 
-    let (account, score) = best.ok_or_else(|| {
-        provider_error(format!(
-            "No cached usage data for {plugin_id} accounts. Refresh usage before rotating."
-        ))
-    })?;
-    sync_account_with_plugin(app, store, &plugin, account, Some(score))
+    if let Some((account, score)) = best_other {
+        return sync_account_with_plugin(app, store, &plugin, account, Some(score));
+    }
+    if let Some(account) = fallback_other {
+        return sync_account_with_plugin(app, store, &plugin, account, None);
+    }
+    if let Some((account, score)) = best_current {
+        return sync_account_with_plugin(app, store, &plugin, account, Some(score));
+    }
+
+    Err(provider_error(format!(
+        "No cached usage data for {plugin_id} accounts. Refresh usage before rotating."
+    )))
 }
 
 fn sync_account_with_plugin<R: Runtime>(
@@ -190,6 +212,20 @@ fn has_supported_strategy(
     account: &AccountRecord,
 ) -> bool {
     opencode_strategy_for_account(plugin, config, account).is_ok()
+}
+
+fn account_matches_current_opencode_auth<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    store: &AccountStore,
+    plugin: &LoadedPlugin,
+    config: &OpenCodeExternalAuth,
+    account: &AccountRecord,
+) -> Result<bool> {
+    let strategy = opencode_strategy_for_account(plugin, config, account)?;
+    let Some(credentials) = secrets::get_account_credentials(app, store, &account.id)? else {
+        return Ok(false);
+    };
+    opencode_auth_file::current_auth_matches(config, strategy, &credentials)
 }
 
 fn rotation_line_labels(config: &OpenCodeExternalAuth) -> Result<HashSet<String>> {

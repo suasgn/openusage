@@ -1,6 +1,6 @@
 # Local HTTP API
 
-OpenUsage exposes a local HTTP API on the loopback interface so other local apps can read usage data and trigger supported local actions.
+OpenBurn exposes a local HTTP API on the loopback interface so other local apps can read usage data and trigger supported local actions.
 
 **Base URL:** `http://127.0.0.1:6736`
 
@@ -24,7 +24,7 @@ Returns a single cached usage snapshot for the given provider.
 
 ### `POST /v1/external-auth/opencode/sync`
 
-Syncs one OpenUsage account into OpenCode's `auth.json`.
+Syncs one OpenBurn account into OpenCode's `auth.json`.
 
 ```json
 { "accountId": "..." }

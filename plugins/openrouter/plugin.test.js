@@ -67,7 +67,7 @@ describe("openrouter plugin", () => {
     expect(creditsCall.url).toBe("https://openrouter.ai/api/v1/credits")
     expect(keyCall.url).toBe("https://openrouter.ai/api/v1/key")
     expect(creditsCall.headers.Authorization).toBe("Bearer or-test-key")
-    expect(creditsCall.headers["X-Title"]).toBe("OpenUsage")
+    expect(creditsCall.headers["X-Title"]).toBe("OpenBurn")
     expect(keyCall.timeoutMs).toBe(3000)
   })
 

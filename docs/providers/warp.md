@@ -14,7 +14,7 @@ Tracks [Warp](https://www.warp.dev) request credits and add-on credits.
 
 ## Setup
 
-1. Add a Warp account in OpenUsage settings, or set `WARP_API_KEY`
+1. Add a Warp account in OpenBurn settings, or set `WARP_API_KEY`
 2. Enter the Warp API key/token
 
 Account JSON fields:

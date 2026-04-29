@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { APP_GITHUB_API_REPO_URL } from "@/lib/brand"
 
 export interface Release {
   id: number
@@ -10,7 +11,7 @@ export interface Release {
 }
 
 async function fetchReleaseByTag(tag: string): Promise<Release | null> {
-  const url = `https://api.github.com/repos/robinebers/openusage/releases/tags/${encodeURIComponent(
+  const url = `${APP_GITHUB_API_REPO_URL}/releases/tags/${encodeURIComponent(
     tag,
   )}`
   const res = await fetch(url)

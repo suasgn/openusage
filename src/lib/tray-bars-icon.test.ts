@@ -46,6 +46,19 @@ describe("tray-bars-icon", () => {
     expect(svg).not.toContain("<image ")
   })
 
+  it("style=app renders the app mark and no provider image", () => {
+    const svg = makeTrayBarsSvg({
+      bars: [{ id: "a", fraction: 0.5 }],
+      sizePx: 36,
+      style: "app",
+      percentText: "50%",
+      providerIconUrl: "data:image/svg+xml;base64,ABC",
+    })
+    expect(svg).toContain("<g ")
+    expect(svg).toContain(">50%</text>")
+    expect(svg).not.toContain("<image ")
+  })
+
   it("style=bars with empty bars renders a single empty track", () => {
     const svg = makeTrayBarsSvg({
       bars: [],

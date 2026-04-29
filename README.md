@@ -1,24 +1,24 @@
-# Track all your AI coding subscriptions in one place
+# OpenBurn
 
-See your usage at a glance from your menu bar. No digging through dashboards.
+Track all your AI coding subscriptions in one place from your menu bar. No digging through dashboards.
 
-![OpenUsage Screenshot](screenshot.png)
+![OpenBurn Screenshot](screenshot.png)
 
 ## Download
 
-[**Download the latest release**](https://github.com/robinebers/openusage/releases/latest) (macOS, Apple Silicon & Intel)
+[**Download the latest release**](https://github.com/suasgn/openburn/releases/latest) (macOS, Apple Silicon & Intel)
 
 The app auto-updates. Install once and you're set.
 
 ## What It Does
 
-OpenUsage lives in your menu bar and shows you how much of your AI coding subscriptions you've used. Progress bars, badges, and clear labels. No mental math required.
+OpenBurn lives in your menu bar and shows you how much of your AI coding subscriptions you've used. Progress bars, badges, and clear labels. No mental math required.
 
 - **One glance.** All your AI tools, one panel.
 - **Always up-to-date.** Refreshes automatically on a schedule you pick.
 - **Global shortcut.** Toggle the panel from anywhere with a customizable keyboard shortcut.
 - **Lightweight.** Opens instantly, stays out of your way.
-- **Plugin-based.** New providers get added without updating the whole app.
+- **Provider-based.** New providers get added without updating the whole app.
 - **[Local HTTP API](docs/local-http-api.md).** Other apps can read your usage data from `127.0.0.1:6736`.
 - **[Proxy support](docs/proxy.md).** Route provider HTTP requests through a SOCKS5 or HTTP proxy.
 
@@ -45,29 +45,29 @@ OpenUsage lives in your menu bar and shows you how much of your AI coding subscr
 
 Community contributions welcome.
 
-Want a provider that's not listed? [Open an issue.](https://github.com/robinebers/openusage/issues/new)
+Want a provider that's not listed? [Open an issue.](https://github.com/suasgn/openburn/issues/new)
 
 ## Open Source, Community Driven
 
-OpenUsage is built by its users. Hundreds of people use it daily, and the project grows through community contributions: new providers, bug fixes, and ideas.
+OpenBurn is built by its users. The project grows through community contributions: new providers, bug fixes, and ideas.
 
 I maintain the project as a guide and quality gatekeeper, but this is your app as much as mine. If something is missing or broken, the best way to get it fixed is to contribute by opening an issue, or submitting a PR.
 
-Plugins are currently bundled as we build our the API, but soon will be made flexible so you can build and load their own.
+Providers are currently bundled while the API settles, but later can be made flexible so you can build and load your own.
 
-<a href="https://www.star-history.com/?repos=robinebers%2Fopenusage&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=suasgn%2Fopenburn&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=robinebers/openusage&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=robinebers/openusage&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=robinebers/openusage&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=suasgn/openburn&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=suasgn/openburn&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=suasgn/openburn&type=date&legend=top-left" />
  </picture>
 </a>
 
 ### How to Contribute
 
-- **Add a provider.** Each one is just a plugin. See the [Plugin API](docs/plugins/api.md).
+- **Add a provider.** Each one is a provider plugin. See the [Plugin API](docs/plugins/api.md).
 - **Fix a bug.** PRs welcome. Provide before/after screenshots.
-- **Request a feature.** [Open an issue](https://github.com/robinebers/openusage/issues/new) and make your case.
+- **Request a feature.** [Open an issue](https://github.com/suasgn/openburn/issues/new) and make your case.
 
 Keep it simple. No feature creep, no AI-generated commit messages, test your changes.
 
@@ -75,15 +75,11 @@ Keep it simple. No feature creep, no AI-generated commit messages, test your cha
 
 Not a single line of code in this project was read or written by hand. 100% AI-generated, AI-reviewed, AI-shipped — using [Cursor](https://cursor.com), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), and [Codex CLI](https://github.com/openai/codex).
 
-OpenUsage is a real-world example of what I teach in the [AI Builder's Blueprint](https://itsbyrob.in/EBDqgJ6) — a proven process for building and shipping software with AI, no coding background required.
+OpenBurn is an experimental fork of [OpenUsage](https://github.com/robinebers/openusage).
 
-## Sponsors
+## Upstream
 
-OpenUsage is supported by our sponsors. Become a sponsor to get your logo here and on [openusage.ai](https://openusage.ai).
-
-[Become a Sponsor](https://github.com/sponsors/robinebers)
-
-<!-- Add sponsor logos here -->
+OpenUsage is the upstream project by Robin Ebers and contributors.
 
 ## Credits
 

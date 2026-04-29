@@ -1,10 +1,10 @@
-# Contributing to OpenUsage
+# Contributing to OpenBurn
 
-OpenUsage accepts contributions, but has a high quality bar. Read this entire document before opening a PR.
+OpenBurn accepts contributions, but has a high quality bar. Read this entire document before opening a PR.
 
 ## Philosophy
 
-OpenUsage is highly opinionated. It focuses on clean design, fast performance, and a great user experience. The feature set is intentionally limited to core functionality: tracking AI coding subscription usage, nothing more. Contributions that try to expand that scope, add unnecessary complexity, or compromise the UX will be closed.
+OpenBurn is highly opinionated. It focuses on clean design, fast performance, and a great user experience. The feature set is intentionally limited to core functionality: tracking AI coding subscription usage, nothing more. Contributions that try to expand that scope, add unnecessary complexity, or compromise the UX will be closed.
 
 If you're unsure whether your idea fits, open an issue first.
 
@@ -15,7 +15,7 @@ If you're unsure whether your idea fits, open an issue first.
 - Test your changes. If it touches UI, include before/after screenshots.
 - Keep it simple. Don't over-engineer.
 - One PR per concern. Don't bundle unrelated changes.
-- Match the existing design language. OpenUsage has a specific look and feel.
+- Match the existing design language. OpenBurn has a specific look and feel.
 
 ## License Agreement
 
@@ -41,7 +41,7 @@ Each provider is a plugin. See the [Plugin API docs](docs/plugins/api.md) for th
 4. Test it locally with `bun tauri dev`
 5. Open a PR with screenshots showing it working
 
-You can also [open an issue](https://github.com/robinebers/openusage/issues/new?template=new_provider.yml) to request a provider without building it yourself.
+You can also [open an issue](https://github.com/suasgn/openburn/issues/new?template=new_provider.yml) to request a provider without building it yourself.
 
 ### Fix a bug
 
@@ -52,7 +52,7 @@ You can also [open an issue](https://github.com/robinebers/openusage/issues/new?
 
 ### Request a feature
 
-Don't open a PR for large features without discussing first. [Open an issue](https://github.com/robinebers/openusage/issues/new?template=feature_request.yml) and make your case.
+Don't open a PR for large features without discussing first. [Open an issue](https://github.com/suasgn/openburn/issues/new?template=feature_request.yml) and make your case.
 
 ## What Gets Accepted
 
@@ -79,13 +79,11 @@ Don't open a PR for large features without discussing first. [Open an issue](htt
 
 ## Maintainers
 
-- [@robinebers](https://github.com/robinebers) (lead)
-- [@validatedev](https://github.com/validatedev)
-- [@davidarny](https://github.com/davidarny)
+- [@suasgn](https://github.com/suasgn) (lead)
 
-All PRs require approval from at least 2 maintainers before merging.
-Release tags (`v*`) are owner-managed and can only be created by [@robinebers](https://github.com/robinebers).
+All PRs require maintainer approval before merging.
+Release tags (`v*`) are owner-managed and can only be created by [@suasgn](https://github.com/suasgn).
 
 ## Questions?
 
-Open a [bug report](https://github.com/robinebers/openusage/issues/new?template=bug_report.yml) or [feature request](https://github.com/robinebers/openusage/issues/new?template=feature_request.yml) using the issue templates.
+Open a [bug report](https://github.com/suasgn/openburn/issues/new?template=bug_report.yml) or [feature request](https://github.com/suasgn/openburn/issues/new?template=feature_request.yml) using the issue templates.
