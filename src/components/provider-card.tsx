@@ -1,26 +1,23 @@
-import { Fragment, useMemo } from "react"
+import { useMemo } from "react"
 import { ExternalLink, Hourglass, RefreshCw } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SkeletonLines } from "@/components/skeleton-lines"
 import { PluginError } from "@/components/plugin-error"
+import { MetricLineGroups, isErrorBadge } from "@/components/provider-card-lines"
 import { useNowTicker } from "@/hooks/use-now-ticker"
 import { REFRESH_COOLDOWN_MS, type DisplayMode, type ResetTimerDisplayMode } from "@/lib/settings"
 import type { ManifestLine, MetricLine, PluginLink } from "@/lib/plugin-types"
-import { groupLinesByType } from "@/lib/group-lines-by-type"
-import { clamp01, formatCountNumber, formatFixedPrecisionNumber } from "@/lib/utils"
-import { calculateDeficit, calculatePaceStatus, type PaceStatus } from "@/lib/pace-status"
-import { buildPaceDetailText, formatDeficitText, formatRunsOutText, getPaceStatusText } from "@/lib/pace-tooltip"
-import { formatResetAbsoluteLabel, formatResetRelativeLabel, formatResetTooltipText } from "@/lib/reset-tooltip"
+import { getBaseMetricLabel, splitAccountScopedLabel } from "@/lib/account-scoped-label"
 
 interface ProviderCardProps {
   name: string
   plan?: string
   links?: PluginLink[]
+  accountOrder?: string[]
   showSeparator?: boolean
   loading?: boolean
   error?: string | null
@@ -34,55 +31,33 @@ interface ProviderCardProps {
   onResetTimerDisplayModeToggle?: () => void
 }
 
-const PACE_VISUALS: Record<PaceStatus, { dotClass: string }> = {
-  ahead: { dotClass: "bg-green-500" },
-  "on-track": { dotClass: "bg-yellow-500" },
-  behind: { dotClass: "bg-red-500" },
+type AccountLineGroup = {
+  accountLabel: string
+  accountId: string | null
+  plan: string | null
+  lines: MetricLine[]
 }
 
-/** Colored dot indicator showing pace status */
-function PaceIndicator({
-  status,
-  detailText,
-  isLimitReached,
-}: {
-  status: PaceStatus
-  detailText?: string | null
-  isLimitReached?: boolean
-}) {
-  const colorClass = PACE_VISUALS[status].dotClass
+function removeAccountPrefix(line: MetricLine): {
+  accountLabel: string | null
+  accountId: string | null
+  line: MetricLine
+} {
+  const { accountLabel, accountId, metricLabel } = splitAccountScopedLabel(line.label)
+  if (!accountLabel) return { accountLabel: null, accountId: null, line }
 
-  const statusText = getPaceStatusText(status)
-
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={(props) => (
-          <span
-            {...props}
-            className={`inline-block w-2 h-2 rounded-full ${colorClass}`}
-            aria-label={isLimitReached ? "Limit reached" : statusText}
-          />
-        )}
-      />
-      <TooltipContent side="top" className="text-xs text-center">
-        {isLimitReached ? (
-          "Limit reached"
-        ) : (
-          <>
-            <div>{statusText}</div>
-            {detailText && <div className="text-[10px] opacity-60">{detailText}</div>}
-          </>
-        )}
-      </TooltipContent>
-    </Tooltip>
-  )
+  return {
+    accountLabel,
+    accountId,
+    line: { ...line, label: metricLabel },
+  }
 }
 
 export function ProviderCard({
   name,
   plan,
   links = [],
+  accountOrder = [],
   showSeparator = true,
   loading = false,
   error = null,
@@ -112,7 +87,55 @@ export function ProviderCard({
     : skeletonLines.filter(line => line.scope === "overview")
   const filteredLines = scopeFilter === "all"
     ? lines
-    : lines.filter(line => overviewLabels.has(line.label))
+    : lines.filter(line => overviewLabels.has(getBaseMetricLabel(line.label)))
+
+  const groupedLines = useMemo(() => {
+    const ungrouped: MetricLine[] = []
+    const groups: AccountLineGroup[] = []
+    const byAccount = new Map<string, AccountLineGroup>()
+
+    for (const line of filteredLines) {
+      const scoped = removeAccountPrefix(line)
+      if (!scoped.accountLabel) {
+        ungrouped.push(scoped.line)
+        continue
+      }
+
+      const groupKey = `${scoped.accountLabel}::${scoped.accountId ?? ""}`
+      let group = byAccount.get(groupKey)
+      if (!group) {
+        group = {
+          accountLabel: scoped.accountLabel,
+          accountId: scoped.accountId,
+          plan: null,
+          lines: [],
+        }
+        byAccount.set(groupKey, group)
+        groups.push(group)
+      }
+
+      if (scoped.line.type === "badge" && scoped.line.label === "Plan") {
+        group.plan = scoped.line.text
+        continue
+      }
+
+      group.lines.push(scoped.line)
+    }
+
+    if (accountOrder.length > 0 && groups.length > 1) {
+      const orderIndexById = new Map(accountOrder.map((accountId, index) => [accountId, index]))
+      groups.sort((left, right) => {
+        const leftOrder = left.accountId ? orderIndexById.get(left.accountId) : undefined
+        const rightOrder = right.accountId ? orderIndexById.get(right.accountId) : undefined
+        if (leftOrder === undefined && rightOrder === undefined) return 0
+        if (leftOrder === undefined) return 1
+        if (rightOrder === undefined) return -1
+        return leftOrder - rightOrder
+      })
+    }
+
+    return { ungrouped, groups }
+  }, [accountOrder, filteredLines])
 
   const hasResetCountdown = filteredLines.some(
     (line) => line.type === "progress" && Boolean(line.resetsAt)
@@ -250,257 +273,79 @@ export function ProviderCard({
 
         {!loading && !error && (
           <div className="space-y-4">
-            {groupLinesByType(filteredLines).map((group, gi) =>
-              group.kind === "text" ? (
-                <div key={gi} className="space-y-1">
-                  {group.lines.map((line, li) => (
-                    <MetricLineRenderer
-                      key={`${line.label}-${gi}-${li}`}
-                      line={line}
-                      displayMode={displayMode}
-                      resetTimerDisplayMode={resetTimerDisplayMode}
-                      onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
-                      now={now}
+            <MetricLineGroups
+              lines={groupedLines.ungrouped}
+              displayMode={displayMode}
+              resetTimerDisplayMode={resetTimerDisplayMode}
+              onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
+              now={now}
+            />
+
+            {groupedLines.groups.map((group) => {
+              const contentLines = group.lines.filter((line) => !isErrorBadge(line))
+              const errorLines = group.lines.filter(isErrorBadge)
+              const hasGroupCard = contentLines.length > 0 || Boolean(group.plan)
+
+              return (
+                <div key={`${group.accountLabel}:${group.accountId ?? ""}`} className="space-y-2">
+                  {hasGroupCard && (
+                    <div className="rounded-md border bg-muted/40 p-2">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        {group.accountId ? (
+                          <Tooltip>
+                            <TooltipTrigger
+                              render={(props) => (
+                                <p {...props} className="text-xs text-muted-foreground font-medium truncate">
+                                  {group.accountLabel}
+                                </p>
+                              )}
+                            />
+                            <TooltipContent side="top" className="text-xs">
+                              Account ID: {group.accountId}
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <p className="text-xs text-muted-foreground font-medium truncate">
+                            {group.accountLabel}
+                          </p>
+                        )}
+                        {group.plan && (
+                          <Badge
+                            variant="outline"
+                            className="truncate min-w-0 max-w-[60%]"
+                            title={group.plan}
+                          >
+                            {group.plan}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="space-y-4">
+                        <MetricLineGroups
+                          lines={contentLines}
+                          displayMode={displayMode}
+                          resetTimerDisplayMode={resetTimerDisplayMode}
+                          onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
+                          now={now}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {errorLines.map((line, index) => (
+                    <PluginError
+                      key={`${group.accountLabel}-error-${index}`}
+                      message={line.text}
+                      contextLabel={group.accountLabel}
+                      contextAccountId={group.accountId}
                     />
                   ))}
                 </div>
-              ) : (
-                <Fragment key={gi}>
-                  {group.lines.map((line, li) => (
-                    <MetricLineRenderer
-                      key={`${line.label}-${gi}-${li}`}
-                      line={line}
-                      displayMode={displayMode}
-                      resetTimerDisplayMode={resetTimerDisplayMode}
-                      onResetTimerDisplayModeToggle={onResetTimerDisplayModeToggle}
-                      now={now}
-                    />
-                  ))}
-                </Fragment>
               )
-            )}
+            })}
           </div>
         )}
       </div>
       {showSeparator && <Separator />}
     </div>
   )
-}
-
-function MetricLineRenderer({
-  line,
-  displayMode,
-  resetTimerDisplayMode,
-  onResetTimerDisplayModeToggle,
-  now,
-}: {
-  line: MetricLine
-  displayMode: DisplayMode
-  resetTimerDisplayMode: ResetTimerDisplayMode
-  onResetTimerDisplayModeToggle?: () => void
-  now: number
-}) {
-  if (line.type === "text") {
-    return (
-      <div>
-        <div className="flex justify-between items-center h-[18px]">
-          <span className="text-xs text-muted-foreground flex-shrink-0">{line.label}</span>
-          <span
-            className="text-xs text-muted-foreground truncate min-w-0 max-w-[60%] text-right"
-            style={line.color ? { color: line.color } : undefined}
-            title={line.value}
-          >
-            {line.value}
-          </span>
-        </div>
-        {line.subtitle && (
-          <div className="text-[10px] text-muted-foreground text-right -mt-0.5">{line.subtitle}</div>
-        )}
-      </div>
-    )
-  }
-
-  if (line.type === "badge") {
-    return (
-      <div>
-        <div className="flex justify-between items-center h-[22px]">
-          <span className="text-sm text-muted-foreground flex-shrink-0">{line.label}</span>
-          <Badge
-            variant="outline"
-            className="truncate min-w-0 max-w-[60%]"
-            style={
-              line.color
-                ? { color: line.color, borderColor: line.color }
-                : undefined
-            }
-            title={line.text}
-          >
-            {line.text}
-          </Badge>
-        </div>
-        {line.subtitle && (
-          <div className="text-xs text-muted-foreground text-right -mt-0.5">{line.subtitle}</div>
-        )}
-      </div>
-    )
-  }
-
-  if (line.type === "progress") {
-    const resetsAtMs = line.resetsAt ? Date.parse(line.resetsAt) : Number.NaN
-    const periodDurationMs = line.periodDurationMs
-    const hasPaceContext = Number.isFinite(resetsAtMs) && Number.isFinite(periodDurationMs)
-    const hasTimeMarkerContext = hasPaceContext && periodDurationMs! > 0
-    const shownAmount =
-      displayMode === "used"
-        ? line.used
-        : Math.max(0, line.limit - line.used)
-    const percent = Math.round(clamp01(shownAmount / line.limit) * 10000) / 100
-    const leftSuffix = displayMode === "left" ? " left" : ""
-
-    const primaryText =
-      line.format.kind === "percent"
-        ? `${Math.round(shownAmount)}%${leftSuffix}`
-        : line.format.kind === "dollars"
-          ? `$${formatFixedPrecisionNumber(shownAmount)}${leftSuffix}`
-          : `${formatCountNumber(shownAmount)} ${line.format.suffix}${leftSuffix}`
-
-    const resetLabel = line.resetsAt
-      ? resetTimerDisplayMode === "absolute"
-        ? formatResetAbsoluteLabel(now, line.resetsAt)
-        : formatResetRelativeLabel(now, line.resetsAt)
-      : null
-    const resetTooltipText = line.resetsAt
-      ? formatResetTooltipText({
-          nowMs: now,
-          resetsAtIso: line.resetsAt,
-          visibleMode: resetTimerDisplayMode,
-        })
-      : null
-
-    const secondaryText =
-      resetLabel ??
-      (line.format.kind === "percent"
-        ? `${line.limit}% cap`
-        : line.format.kind === "dollars"
-          ? `$${formatFixedPrecisionNumber(line.limit)} limit`
-          : `${formatCountNumber(line.limit)} ${line.format.suffix}`)
-
-    // Calculate pace status if we have reset time and period duration
-    const paceResult = hasPaceContext
-      ? calculatePaceStatus(line.used, line.limit, resetsAtMs, periodDurationMs!, now)
-      : null
-    const paceStatus = paceResult?.status ?? null
-    const paceMarkerValue = hasTimeMarkerContext && paceStatus && paceStatus !== "on-track"
-      ? (() => {
-          const periodStartMs = resetsAtMs - periodDurationMs!
-          const elapsedFraction = clamp01((now - periodStartMs) / periodDurationMs!)
-          const elapsedPercent = elapsedFraction * 100
-          return displayMode === "used" ? elapsedPercent : 100 - elapsedPercent
-        })()
-      : undefined
-    const isLimitReached = line.used >= line.limit
-    const paceDetailText =
-      hasPaceContext && !isLimitReached
-        ? buildPaceDetailText({
-            paceResult,
-            used: line.used,
-            limit: line.limit,
-            periodDurationMs: periodDurationMs!,
-            resetsAtMs,
-            nowMs: now,
-            displayMode,
-          })
-        : null
-
-    const deficit = hasPaceContext && !isLimitReached
-      ? calculateDeficit(line.used, line.limit, resetsAtMs, periodDurationMs!, now)
-      : null
-    const deficitText = deficit !== null
-      ? formatDeficitText(deficit, line.format, displayMode)
-      : null
-    const runsOutText = hasPaceContext && !isLimitReached
-      ? formatRunsOutText({
-          paceResult,
-          used: line.used,
-          limit: line.limit,
-          periodDurationMs: periodDurationMs!,
-          resetsAtMs,
-          nowMs: now,
-        })
-      : null
-
-    return (
-      <div>
-        <div className="text-sm font-medium mb-1.5 flex items-center gap-1.5">
-          {line.label}
-          {paceStatus && (
-            <PaceIndicator status={paceStatus} detailText={paceDetailText} isLimitReached={isLimitReached} />
-          )}
-        </div>
-        <Progress
-          value={percent}
-          indicatorColor={line.color}
-          markerValue={paceMarkerValue}
-        />
-        <div className="flex justify-between items-center mt-1.5">
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {primaryText}
-          </span>
-          {secondaryText && (
-            resetTooltipText ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={(props) =>
-                    resetLabel && onResetTimerDisplayModeToggle ? (
-                      <button
-                        {...props}
-                        type="button"
-                        onClick={onResetTimerDisplayModeToggle}
-                        className="text-xs text-muted-foreground tabular-nums hover:text-foreground transition-colors"
-                      >
-                        {secondaryText}
-                      </button>
-                    ) : (
-                      <span {...props} className="text-xs text-muted-foreground tabular-nums">
-                        {secondaryText}
-                      </span>
-                    )
-                  }
-                />
-                <TooltipContent side="top">{resetTooltipText}</TooltipContent>
-              </Tooltip>
-            ) : resetLabel && onResetTimerDisplayModeToggle ? (
-              <button
-                type="button"
-                onClick={onResetTimerDisplayModeToggle}
-                className="text-xs text-muted-foreground tabular-nums hover:text-foreground transition-colors"
-              >
-                {secondaryText}
-              </button>
-            ) : (
-              <span className="text-xs text-muted-foreground">
-                {secondaryText}
-              </span>
-            )
-          )}
-        </div>
-        {(deficitText || runsOutText) && (
-          <div className="flex justify-between items-center mt-0.5">
-            {deficitText && (
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {deficitText}
-              </span>
-            )}
-            {runsOutText && (
-              <span className="text-xs text-muted-foreground tabular-nums ml-auto">
-                {runsOutText}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  return null
 }

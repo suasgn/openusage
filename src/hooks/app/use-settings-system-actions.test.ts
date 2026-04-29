@@ -43,9 +43,7 @@ describe("useSettingsSystemActions", () => {
     saveStartOnLoginMock.mockReset()
     invokeMock.mockReset()
 
-    getEnabledPluginIdsMock.mockImplementation((settings: { order: string[]; disabled: string[] }) =>
-      settings.order.filter((id) => !settings.disabled.includes(id))
-    )
+    getEnabledPluginIdsMock.mockImplementation((settings: { order: string[] }) => settings.order)
     saveAutoUpdateIntervalMock.mockResolvedValue(undefined)
     saveGlobalShortcutMock.mockResolvedValue(undefined)
     saveStartOnLoginMock.mockResolvedValue(undefined)
@@ -79,12 +77,12 @@ describe("useSettingsSystemActions", () => {
     nowSpy.mockRestore()
   })
 
-  it("clears next refresh when no enabled plugins remain", () => {
+  it("clears next refresh when plugin order is empty", () => {
     const setAutoUpdateNextAt = vi.fn()
 
     const { result } = renderHook(() =>
       useSettingsSystemActions({
-        pluginSettings: { order: ["codex"], disabled: ["codex"] },
+        pluginSettings: { order: [], disabled: ["codex"] },
         setAutoUpdateInterval: vi.fn(),
         setAutoUpdateNextAt,
         setGlobalShortcut: vi.fn(),

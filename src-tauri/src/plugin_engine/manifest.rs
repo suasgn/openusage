@@ -1,5 +1,6 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
@@ -21,6 +22,224 @@ pub struct PluginLink {
     pub url: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginAuth {
+    pub default_strategy_id: Option<String>,
+    #[serde(default)]
+    pub strategies: Vec<AuthStrategyManifest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthStrategyKind {
+    ApiKey,
+    Json,
+    #[serde(rename = "oauthPkce")]
+    OAuthPkce,
+    DeviceCode,
+    BrowserCookie,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthCredentialField {
+    pub name: String,
+    pub label: String,
+    #[serde(default)]
+    pub secret: bool,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub placeholder: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthStrategyManifest {
+    pub id: String,
+    pub label: String,
+    pub kind: AuthStrategyKind,
+    #[serde(default)]
+    pub fields: Vec<AuthCredentialField>,
+    #[serde(default)]
+    pub credential_template: Option<serde_json::Value>,
+    #[serde(default)]
+    pub import_sources: Vec<AuthCredentialImportSource>,
+    #[serde(default)]
+    pub oauth: Option<OAuthPkceConfig>,
+    #[serde(default)]
+    pub device: Option<DeviceCodeConfig>,
+    #[serde(default)]
+    pub browser_cookie: Option<BrowserCookieConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthCredentialImportKind {
+    Env,
+    EncryptedFileJson,
+    FileJson,
+    KeychainJson,
+    KeychainText,
+    PluginDataJson,
+    SqliteJson,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthCredentialImportSource {
+    pub id: String,
+    pub kind: AuthCredentialImportKind,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub env: Option<String>,
+    #[serde(default)]
+    pub envs: Vec<String>,
+    #[serde(default)]
+    pub paths: Vec<AuthCredentialImportPath>,
+    #[serde(default)]
+    pub key_paths: Vec<AuthCredentialImportPath>,
+    #[serde(default)]
+    pub merge_paths: Vec<AuthCredentialImportPath>,
+    #[serde(default)]
+    pub services: Vec<AuthCredentialImportKeychainService>,
+    #[serde(default)]
+    pub db_path: Option<String>,
+    #[serde(default)]
+    pub query: Option<String>,
+    #[serde(default)]
+    pub value_pointer: Option<String>,
+    #[serde(default)]
+    pub json: Option<AuthCredentialJsonMapping>,
+    #[serde(default)]
+    pub text: Option<AuthCredentialTextMapping>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthCredentialImportPath {
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub env: Option<String>,
+    #[serde(default)]
+    pub suffix: Option<String>,
+    #[serde(default)]
+    pub plugin_data_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthCredentialImportKeychainService {
+    pub service: String,
+    #[serde(default)]
+    pub current_user: bool,
+    #[serde(default)]
+    pub target: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthCredentialJsonMapping {
+    #[serde(default)]
+    pub constants: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    pub fields: Vec<AuthCredentialFieldMapping>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthCredentialTextMapping {
+    pub target: String,
+    #[serde(default)]
+    pub constants: serde_json::Map<String, serde_json::Value>,
+    #[serde(default)]
+    pub decode: Option<AuthCredentialTextDecode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthCredentialTextDecode {
+    GoKeyringBase64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthCredentialFieldMapping {
+    pub target: String,
+    #[serde(default)]
+    pub pointer: Option<String>,
+    #[serde(default)]
+    pub pointers: Vec<String>,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub normalize: Option<AuthCredentialValueNormalize>,
+    #[serde(default)]
+    pub join: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthCredentialValueNormalize {
+    EpochSeconds,
+    Trim,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthPkceConfig {
+    pub authorize_url: String,
+    pub token_url: String,
+    pub client_id: String,
+    #[serde(default)]
+    pub client_secret: Option<String>,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    #[serde(default)]
+    pub redirect_host: Option<String>,
+    #[serde(default)]
+    pub callback_path: Option<String>,
+    #[serde(default)]
+    pub callback_port: Option<u16>,
+    #[serde(default)]
+    pub authorize_params: HashMap<String, String>,
+    #[serde(default)]
+    pub token_request: TokenRequestKind,
+    #[serde(default)]
+    pub include_state_in_token_request: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum TokenRequestKind {
+    #[default]
+    Form,
+    Json,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceCodeConfig {
+    pub device_code_url: String,
+    pub token_url: String,
+    pub client_id: String,
+    #[serde(default)]
+    pub scope: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserCookieConfig {
+    pub login_url: String,
+    #[serde(default)]
+    pub cookie_urls: Vec<String>,
+    #[serde(default)]
+    pub required_cookie_names: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginManifest {
@@ -34,6 +253,8 @@ pub struct PluginManifest {
     pub lines: Vec<ManifestLine>,
     #[serde(default)]
     pub links: Vec<PluginLink>,
+    #[serde(default)]
+    pub auth: Option<PluginAuth>,
 }
 
 #[derive(Debug, Clone)]
@@ -60,8 +281,11 @@ pub fn load_plugins_from_dir(plugins_dir: &std::path::Path) -> Vec<LoadedPlugin>
         if !manifest_path.exists() {
             continue;
         }
-        if let Ok(p) = load_single_plugin(&path) {
-            plugins.push(p);
+        match load_single_plugin(&path) {
+            Ok(plugin) => plugins.push(plugin),
+            Err(err) => {
+                log::warn!("failed to load plugin {}: {}", path.display(), err);
+            }
         }
     }
 
@@ -266,6 +490,69 @@ mod tests {
         assert_eq!(manifest.links.len(), 2);
         assert_eq!(manifest.links[0].label, "Status");
         assert_eq!(manifest.links[1].url, "https://example.com/billing");
+    }
+
+    #[test]
+    fn oauth_pkce_auth_kind_parses_from_manifest() {
+        let manifest = parse_manifest(
+            r#"
+            {
+              "schemaVersion": 1,
+              "id": "codex",
+              "name": "Codex",
+              "version": "0.0.1",
+              "entry": "plugin.js",
+              "icon": "icon.svg",
+              "auth": {
+                "defaultStrategyId": "oauth",
+                "strategies": [
+                  {
+                    "id": "oauth",
+                    "label": "OAuth",
+                    "kind": "oauthPkce",
+                    "fields": [],
+                    "oauth": {
+                      "authorizeUrl": "https://example.com/authorize",
+                      "tokenUrl": "https://example.com/token",
+                      "clientId": "client",
+                      "redirectHost": "127.0.0.1",
+                      "scopes": ["openid"]
+                    }
+                  }
+                ]
+              },
+              "lines": [
+                { "type": "progress", "label": "A", "scope": "overview" }
+              ]
+            }
+            "#,
+        );
+
+        let auth = manifest.auth.expect("auth should parse");
+        assert_eq!(auth.strategies[0].kind, AuthStrategyKind::OAuthPkce);
+        assert_eq!(
+            auth.strategies[0]
+                .oauth
+                .as_ref()
+                .and_then(|config| config.redirect_host.as_deref()),
+            Some("127.0.0.1")
+        );
+    }
+
+    #[test]
+    fn repo_plugin_manifests_load_codex_and_other_oauth_plugins() {
+        let plugins_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("plugins");
+        let plugins = load_plugins_from_dir(&plugins_dir);
+        let ids = plugins
+            .iter()
+            .map(|plugin| plugin.manifest.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(ids.contains(&"codex"));
+        assert!(ids.contains(&"claude"));
+        assert!(ids.contains(&"antigravity"));
     }
 
     #[test]

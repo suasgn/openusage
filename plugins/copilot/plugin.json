@@ -6,6 +6,56 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#A855F7",
+  "auth": {
+    "defaultStrategyId": "oauth",
+    "strategies": [
+      {
+        "id": "oauth",
+        "label": "OAuth",
+        "kind": "deviceCode",
+        "importSources": [
+          {
+            "id": "openusage-keychain",
+            "kind": "keychainJson",
+            "services": [{ "service": "OpenUsage-copilot" }],
+            "json": {
+              "constants": { "type": "oauth" },
+              "fields": [
+                { "target": "accessToken", "pointer": "/token", "required": true, "normalize": "trim" }
+              ]
+            }
+          },
+          {
+            "id": "gh-cli-keychain",
+            "kind": "keychainText",
+            "services": [{ "service": "gh:github.com" }],
+            "text": {
+              "target": "accessToken",
+              "decode": "goKeyringBase64",
+              "constants": { "type": "oauth" }
+            }
+          },
+          {
+            "id": "plugin-state-file",
+            "kind": "pluginDataJson",
+            "paths": [{ "pluginDataPath": "auth.json" }],
+            "json": {
+              "constants": { "type": "oauth" },
+              "fields": [
+                { "target": "accessToken", "pointer": "/token", "required": true, "normalize": "trim" }
+              ]
+            }
+          }
+        ],
+        "device": {
+          "deviceCodeUrl": "https://github.com/login/device/code",
+          "tokenUrl": "https://github.com/login/oauth/access_token",
+          "clientId": "Iv1.b507a08c87ecfe98",
+          "scope": "read:user"
+        }
+      }
+    ]
+  },
   "lines": [
     { "type": "progress", "label": "Premium", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Chat", "scope": "overview", "primaryOrder": 2 },

@@ -6,6 +6,7 @@ export type SettingsPluginState = {
   id: string
   name: string
   enabled: boolean
+  auth?: PluginMeta["auth"]
 }
 
 type UseSettingsPluginListArgs = {
@@ -17,17 +18,19 @@ export function useSettingsPluginList({ pluginSettings, pluginsMeta }: UseSettin
   return useMemo<SettingsPluginState[]>(() => {
     if (!pluginSettings) return []
     const pluginMap = new Map(pluginsMeta.map((plugin) => [plugin.id, plugin]))
+    const disabled = new Set(pluginSettings.disabled ?? [])
 
     return pluginSettings.order
-      .map((id) => {
+      .map<SettingsPluginState | null>((id) => {
         const meta = pluginMap.get(id)
         if (!meta) return null
         return {
           id,
           name: meta.name,
-          enabled: !pluginSettings.disabled.includes(id),
+          enabled: !disabled.has(id),
+          auth: meta.auth,
         }
       })
-      .filter((plugin): plugin is SettingsPluginState => Boolean(plugin))
+      .filter((plugin): plugin is SettingsPluginState => plugin !== null)
   }, [pluginSettings, pluginsMeta])
 }

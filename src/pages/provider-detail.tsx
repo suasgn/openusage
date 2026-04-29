@@ -4,6 +4,7 @@ import type { DisplayMode, ResetTimerDisplayMode } from "@/lib/settings"
 
 interface ProviderDetailPageProps {
   plugin: PluginDisplayState | null
+  accountOrder?: string[]
   onRetry?: () => void
   displayMode: DisplayMode
   resetTimerDisplayMode: ResetTimerDisplayMode
@@ -12,6 +13,7 @@ interface ProviderDetailPageProps {
 
 export function ProviderDetailPage({
   plugin,
+  accountOrder = [],
   onRetry,
   displayMode,
   resetTimerDisplayMode,
@@ -35,6 +37,7 @@ export function ProviderDetailPage({
       error={plugin.error}
       lines={plugin.data?.lines ?? []}
       skeletonLines={plugin.meta.lines}
+      accountOrder={accountOrder}
       lastManualRefreshAt={plugin.lastManualRefreshAt}
       onRetry={onRetry}
       scopeFilter="all"

@@ -6,6 +6,52 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#C09CFF",
+  "auth": {
+    "defaultStrategyId": "oauth",
+    "strategies": [
+      {
+        "id": "oauth",
+        "label": "OAuth",
+        "kind": "json",
+        "fields": [
+          { "name": "accessToken", "label": "Access Token", "secret": true },
+          { "name": "refreshToken", "label": "Refresh Token", "secret": true, "required": true },
+          { "name": "expiresAt", "label": "Expires At" },
+          { "name": "authMethod", "label": "Auth Method" },
+          { "name": "provider", "label": "Provider" },
+          { "name": "profileArn", "label": "Profile ARN", "secret": true }
+        ],
+        "credentialTemplate": {
+          "type": "oauth",
+          "accessToken": "",
+          "refreshToken": "",
+          "expiresAt": "",
+          "authMethod": "",
+          "provider": "",
+          "profileArn": ""
+        },
+        "importSources": [
+          {
+            "id": "kiro-auth-token-file",
+            "kind": "fileJson",
+            "paths": [{ "path": "~/.aws/sso/cache/kiro-auth-token.json" }],
+            "mergePaths": [{ "path": "~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/profile.json" }],
+            "json": {
+              "constants": { "type": "oauth" },
+              "fields": [
+                { "target": "accessToken", "pointer": "/accessToken", "normalize": "trim" },
+                { "target": "refreshToken", "pointer": "/refreshToken", "required": true, "normalize": "trim" },
+                { "target": "expiresAt", "pointer": "/expiresAt", "normalize": "trim" },
+                { "target": "authMethod", "pointer": "/authMethod", "normalize": "trim" },
+                { "target": "provider", "pointer": "/provider", "normalize": "trim" },
+                { "target": "profileArn", "pointers": ["/profileArn", "/arn"], "normalize": "trim" }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
   "lines": [
     { "type": "progress", "label": "Credits", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Bonus Credits", "scope": "overview" },

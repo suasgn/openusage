@@ -21,9 +21,7 @@ describe("useProbeRefreshActions", () => {
   beforeEach(() => {
     trackMock.mockReset()
     getEnabledPluginIdsMock.mockReset()
-    getEnabledPluginIdsMock.mockImplementation((settings: { order: string[]; disabled: string[] }) =>
-      settings.order.filter((id) => !settings.disabled.includes(id))
-    )
+    getEnabledPluginIdsMock.mockImplementation((settings: { order: string[] }) => settings.order)
   })
 
   it("retries one plugin and tracks manual refresh", () => {
@@ -47,7 +45,7 @@ describe("useProbeRefreshActions", () => {
       result.current.handleRetryPlugin("codex")
     })
 
-    expect(trackMock).toHaveBeenCalledWith("provider_refreshed", { provider_id: "codex" })
+    expect(trackMock).toHaveBeenCalledWith("plugin_refreshed", { plugin_id: "codex" })
     expect(setLoadingForPlugins).toHaveBeenCalledWith(["codex"])
     expect(startBatch).toHaveBeenCalledWith(["codex"])
     expect(manualRefreshIdsRef.current.has("codex")).toBe(true)

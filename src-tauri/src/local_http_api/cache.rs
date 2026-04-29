@@ -6,7 +6,7 @@ use std::sync::{Mutex, OnceLock};
 
 const CACHE_FILE_NAME: &str = "usage-api-cache.json";
 const SETTINGS_FILE_NAME: &str = "settings.json";
-const DEFAULT_ENABLED_PLUGINS: &[&str] = &["claude", "codex", "cursor"];
+const DEFAULT_ENABLED_PLUGINS: &[&str] = &["claude", "codex", "copilot"];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -15,7 +15,7 @@ const DEFAULT_ENABLED_PLUGINS: &[&str] = &["claude", "codex", "cursor"];
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CachedPluginSnapshot {
-    pub provider_id: String,
+    pub plugin_id: String,
     pub display_name: String,
     pub plan: Option<String>,
     pub lines: Vec<MetricLine>,
@@ -67,7 +67,10 @@ pub fn load_cache(app_data_dir: &Path) -> HashMap<String, CachedPluginSnapshot> 
             HashMap::new()
         }
         Err(e) => {
-            log::warn!("failed to parse usage-api-cache.json: {}, starting empty", e);
+            log::warn!(
+                "failed to parse usage-api-cache.json: {}, starting empty",
+                e
+            );
             HashMap::new()
         }
     }
@@ -112,7 +115,7 @@ pub fn cache_successful_output(output: &PluginOutput) {
         .unwrap_or_default();
 
     let snapshot = CachedPluginSnapshot {
-        provider_id: output.provider_id.clone(),
+        plugin_id: output.plugin_id.clone(),
         display_name: output.display_name.clone(),
         plan: output.plan.clone(),
         lines: output.lines.clone(),
@@ -120,9 +123,7 @@ pub fn cache_successful_output(output: &PluginOutput) {
     };
 
     let mut state = cache_state().lock().expect("cache state poisoned");
-    state
-        .snapshots
-        .insert(output.provider_id.clone(), snapshot);
+    state.snapshots.insert(output.plugin_id.clone(), snapshot);
     save_cache(&state.app_data_dir, &state.snapshots);
 }
 
@@ -204,7 +205,7 @@ mod tests {
 
     fn make_snapshot(id: &str, name: &str) -> CachedPluginSnapshot {
         CachedPluginSnapshot {
-            provider_id: id.to_string(),
+            plugin_id: id.to_string(),
             display_name: name.to_string(),
             plan: Some("Pro".to_string()),
             lines: vec![],
@@ -239,7 +240,7 @@ mod tests {
         let loaded = load_cache(&dir);
 
         assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded["claude"].provider_id, "claude");
+        assert_eq!(loaded["claude"].plugin_id, "claude");
         assert_eq!(loaded["claude"].fetched_at, "2026-03-26T08:15:30Z");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -279,7 +280,7 @@ mod tests {
     #[test]
     fn snapshot_with_progress_line_round_trips() {
         let snap = CachedPluginSnapshot {
-            provider_id: "claude".to_string(),
+            plugin_id: "claude".to_string(),
             display_name: "Claude".to_string(),
             plan: Some("Max 20x".to_string()),
             lines: vec![crate::plugin_engine::runtime::MetricLine::Progress {
@@ -296,7 +297,7 @@ mod tests {
 
         let json = serde_json::to_string(&snap).unwrap();
         let deserialized: CachedPluginSnapshot = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.provider_id, "claude");
+        assert_eq!(deserialized.plugin_id, "claude");
         assert_eq!(deserialized.lines.len(), 1);
     }
 }

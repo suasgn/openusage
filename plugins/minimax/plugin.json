@@ -6,6 +6,41 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#F5433C",
+  "auth": {
+    "defaultStrategyId": "apiKey",
+    "strategies": [
+      {
+        "id": "apiKey",
+        "label": "API Key",
+        "kind": "apiKey",
+        "fields": [
+          { "name": "apiKey", "label": "API Key", "secret": true, "required": true },
+          { "name": "endpoint", "label": "Endpoint", "placeholder": "AUTO" }
+        ],
+        "credentialTemplate": { "apiKey": "", "endpoint": "AUTO" },
+        "importSources": [
+          {
+            "id": "env-cn-api-key",
+            "kind": "env",
+            "env": "MINIMAX_CN_API_KEY",
+            "text": {
+              "target": "apiKey",
+              "constants": { "type": "apiKey", "endpoint": "CN" }
+            }
+          },
+          {
+            "id": "env-global-api-key",
+            "kind": "env",
+            "envs": ["MINIMAX_API_KEY", "MINIMAX_API_TOKEN"],
+            "text": {
+              "target": "apiKey",
+              "constants": { "type": "apiKey", "endpoint": "GLOBAL" }
+            }
+          }
+        ]
+      }
+    ]
+  },
   "lines": [
     { "type": "progress", "label": "Session", "scope": "overview", "primaryOrder": 1 }
   ]

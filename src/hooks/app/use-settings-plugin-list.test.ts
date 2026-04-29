@@ -16,7 +16,7 @@ function createPluginMeta(id: string, name: string): PluginMeta {
 }
 
 describe("useSettingsPluginList", () => {
-  it("returns ordered settings plugins with enabled state", () => {
+  it("returns ordered settings plugins with auth metadata", () => {
     const pluginSettings: PluginSettings = {
       order: ["codex", "missing", "cursor"],
       disabled: ["cursor"],
@@ -33,8 +33,8 @@ describe("useSettingsPluginList", () => {
     )
 
     expect(result.current).toEqual([
-      { id: "codex", name: "Codex", enabled: true },
-      { id: "cursor", name: "Cursor", enabled: false },
+      { id: "codex", name: "Codex", enabled: true, auth: undefined },
+      { id: "cursor", name: "Cursor", enabled: false, auth: undefined },
     ])
   })
 

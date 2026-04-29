@@ -5,7 +5,7 @@ import type { PluginMeta } from "@/lib/plugin-types"
 import type { DisplayMode, MenubarIconStyle, PluginSettings } from "@/lib/settings"
 import { getEnabledPluginIds } from "@/lib/settings"
 import { getTrayIconSizePx, renderTrayBarsIcon } from "@/lib/tray-bars-icon"
-import { getTrayPrimaryBars, type TrayPrimaryBar } from "@/lib/tray-primary-progress"
+import { getTrayPrimaryBars, getTrayPrimaryTotalBar, type TrayPrimaryBar } from "@/lib/tray-primary-progress"
 import { formatTrayPercentText, formatTrayTooltip } from "@/lib/tray-tooltip"
 import type { PluginState } from "@/hooks/app/types"
 
@@ -187,19 +187,22 @@ export function useTrayIcon({
       const style = menubarIconStyleRef.current
       const sizePx = getTrayIconSizePx(window.devicePixelRatio)
       const nextActiveView = activeViewRef.current
+      const isOverviewView = nextActiveView === "home"
       const activeProviderId =
         nextActiveView !== "home" && nextActiveView !== "settings" ? nextActiveView : null
 
       let trayProviderId: string | null = null
-      if (activeProviderId && enabledPluginIds.includes(activeProviderId)) {
-        trayProviderId = activeProviderId
-      } else if (
-        lastTrayProviderIdRef.current &&
-        enabledPluginIds.includes(lastTrayProviderIdRef.current)
-      ) {
-        trayProviderId = lastTrayProviderIdRef.current
-      } else {
-        trayProviderId = enabledPluginIds[0] ?? null
+      if (!isOverviewView) {
+        if (activeProviderId && enabledPluginIds.includes(activeProviderId)) {
+          trayProviderId = activeProviderId
+        } else if (
+          lastTrayProviderIdRef.current &&
+          enabledPluginIds.includes(lastTrayProviderIdRef.current)
+        ) {
+          trayProviderId = lastTrayProviderIdRef.current
+        } else {
+          trayProviderId = enabledPluginIds[0] ?? null
+        }
       }
 
       const barsForPreview = getTrayPrimaryBars({
@@ -210,18 +213,28 @@ export function useTrayIcon({
         displayMode: displayModeRef.current,
       })
 
-      const providerBars = trayProviderId
-        ? getTrayPrimaryBars({
+      const overviewTotalBar = isOverviewView
+        ? getTrayPrimaryTotalBar({
             pluginsMeta: pluginsMetaRef.current,
             pluginSettings: currentSettings,
             pluginStates: pluginStatesRef.current,
-            maxBars: 1,
             displayMode: displayModeRef.current,
-            pluginId: trayProviderId,
           })
-        : []
+        : null
+      const providerBars = isOverviewView
+        ? [overviewTotalBar ?? { id: "overview", fraction: undefined }]
+        : trayProviderId
+          ? getTrayPrimaryBars({
+              pluginsMeta: pluginsMetaRef.current,
+              pluginSettings: currentSettings,
+              pluginStates: pluginStatesRef.current,
+              maxBars: 1,
+              displayMode: displayModeRef.current,
+              pluginId: trayProviderId,
+            })
+          : []
 
-      const providerIconUrl = trayProviderId
+      const providerIconUrl = !isOverviewView && trayProviderId
         ? pluginsMetaRef.current.find((plugin) => plugin.id === trayProviderId)?.iconUrl
         : undefined
       const providerPercentText = formatTrayPercentText(providerBars[0]?.fraction)
@@ -267,11 +280,13 @@ export function useTrayIcon({
         return
       }
 
-      if (!trayProviderId) {
+      if (!isOverviewView && !trayProviderId) {
         restoreGaugeIcon()
         return
       }
-      lastTrayProviderIdRef.current = trayProviderId
+      if (trayProviderId) {
+        lastTrayProviderIdRef.current = trayProviderId
+      }
 
       if (style === "donut") {
         renderTrayBarsIcon({

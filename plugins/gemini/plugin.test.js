@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { makeCtx } from "../test-helpers.js"
-
-const SETTINGS_PATH = "~/.gemini/settings.json"
-const CREDS_PATH = "~/.gemini/oauth_creds.json"
-const OAUTH2_PATH = "~/.bun/install/global/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js"
+import { makeCtx as makeBaseCtx } from "../test-helpers.js"
 
 const LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
 const QUOTA_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
 const PROJECTS_URL = "https://cloudresourcemanager.googleapis.com/v1/projects"
 const TOKEN_URL = "https://oauth2.googleapis.com/token"
+const TEST_CLIENT_ID = "client-id"
+const TEST_CLIENT_SECRET = "client-secret"
+const GEMINI_CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+const GEMINI_CLIENT_SECRET = "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"
 
 const loadPlugin = async () => {
   await import("./plugin.js")
@@ -21,24 +21,32 @@ function makeJwt(payload) {
   return `${header}.${body}.sig`
 }
 
+function setGeminiCredentials(ctx, raw) {
+  if (!raw || typeof raw !== "object") {
+    ctx.credentials = raw
+    return
+  }
+
+  const credentials = {
+    type: raw.type || "oauth",
+    accessToken: raw.accessToken || raw.access_token || "",
+    refreshToken: raw.refreshToken || raw.refresh_token || "",
+    idToken: raw.idToken || raw.id_token || "",
+    expiryDate: raw.expiryDate || raw.expiry_date,
+  }
+  if (raw.clientId || raw.client_id) credentials.clientId = raw.clientId || raw.client_id
+  if (raw.clientSecret || raw.client_secret) credentials.clientSecret = raw.clientSecret || raw.client_secret
+  ctx.credentials = credentials
+}
+
+function makeCtx() {
+  return makeBaseCtx()
+}
+
 describe("gemini plugin", () => {
   beforeEach(() => {
     delete globalThis.__openusage_plugin
     vi.resetModules()
-  })
-
-  it("throws when auth type is api-key", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.writeText(SETTINGS_PATH, JSON.stringify({ authType: "api-key" }))
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).toThrow("api-key")
-  })
-
-  it("throws when auth type is unsupported", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.writeText(SETTINGS_PATH, JSON.stringify({ authType: "unknown-mode" }))
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).toThrow("unsupported auth type")
   })
 
   it("throws when creds are missing", async () => {
@@ -52,19 +60,14 @@ describe("gemini plugin", () => {
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
 
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "old-token",
-        refresh_token: "refresh-token",
-        id_token: makeJwt({ email: "me@example.com" }),
-        expiry_date: nowMs - 1000,
-      })
-    )
-    ctx.host.fs.writeText(
-      OAUTH2_PATH,
-      "const OAUTH_CLIENT_ID='client-id'; const OAUTH_CLIENT_SECRET='client-secret';"
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "old-token",
+      refresh_token: "refresh-token",
+      id_token: makeJwt({ email: "me@example.com" }),
+      expiry_date: nowMs - 1000,
+      client_id: TEST_CLIENT_ID,
+      client_secret: TEST_CLIENT_SECRET,
+    })
 
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
@@ -105,8 +108,8 @@ describe("gemini plugin", () => {
     expect(flash && flash.used).toBe(40)
     expect(account && account.value).toBe("me@example.com")
 
-    const persisted = JSON.parse(ctx.host.fs.readText(CREDS_PATH))
-    expect(persisted.access_token).toBe("new-token")
+    const updated = JSON.parse(result.updatedCredentialsJson)
+    expect(updated.accessToken).toBe("new-token")
   })
 
   it("uses project fallback and maps workspace tier", async () => {
@@ -114,15 +117,12 @@ describe("gemini plugin", () => {
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
 
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "token",
-        refresh_token: "refresh-token",
-        id_token: makeJwt({ email: "corp@example.com", hd: "example.com" }),
-        expiry_date: nowMs + 3600_000,
-      })
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "token",
+      refresh_token: "refresh-token",
+      id_token: makeJwt({ email: "corp@example.com", hd: "example.com" }),
+      expiry_date: nowMs + 3600_000,
+    })
 
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
@@ -158,19 +158,14 @@ describe("gemini plugin", () => {
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
 
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "stale-token",
-        refresh_token: "refresh-token",
-        id_token: makeJwt({ email: "me@example.com" }),
-        expiry_date: nowMs + 3600_000,
-      })
-    )
-    ctx.host.fs.writeText(
-      OAUTH2_PATH,
-      "const OAUTH_CLIENT_ID='client-id'; const OAUTH_CLIENT_SECRET='client-secret';"
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "stale-token",
+      refresh_token: "refresh-token",
+      id_token: makeJwt({ email: "me@example.com" }),
+      expiry_date: nowMs + 3600_000,
+      client_id: TEST_CLIENT_ID,
+      client_secret: TEST_CLIENT_SECRET,
+    })
 
     let loadCodeAssistCalls = 0
     ctx.host.http.request.mockImplementation((opts) => {
@@ -206,19 +201,14 @@ describe("gemini plugin", () => {
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
 
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "token",
-        refresh_token: "refresh-token",
-        id_token: makeJwt({ email: "me@example.com" }),
-        expiry_date: nowMs + 3600_000,
-      })
-    )
-    ctx.host.fs.writeText(
-      OAUTH2_PATH,
-      "const OAUTH_CLIENT_ID='client-id'; const OAUTH_CLIENT_SECRET='client-secret';"
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "token",
+      refresh_token: "refresh-token",
+      id_token: makeJwt({ email: "me@example.com" }),
+      expiry_date: nowMs + 3600_000,
+      client_id: TEST_CLIENT_ID,
+      client_secret: TEST_CLIENT_SECRET,
+    })
 
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
@@ -233,36 +223,16 @@ describe("gemini plugin", () => {
     expect(() => plugin.probe(ctx)).toThrow("session expired")
   })
 
-  it("throws when auth type is vertex-ai", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.writeText(SETTINGS_PATH, JSON.stringify({ authType: "vertex-ai" }))
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).toThrow("vertex-ai")
-  })
-
-  it("falls back when settings cannot be read", async () => {
-    const ctx = makeCtx()
-    const readText = vi.fn((path) => {
-      if (path === SETTINGS_PATH) throw new Error("boom")
-      return null
-    })
-    ctx.host.fs.exists = (path) => path === SETTINGS_PATH
-    ctx.host.fs.readText = readText
-
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).toThrow("Not logged in")
-  })
-
   it("treats creds without tokens as not logged in", async () => {
     const ctx = makeCtx()
-    ctx.host.fs.writeText(CREDS_PATH, JSON.stringify({ user: "me" }))
+    setGeminiCredentials(ctx, { user: "me" })
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
   })
 
   it("treats non-object creds payload as not logged in", async () => {
     const ctx = makeCtx()
-    ctx.host.fs.writeText(CREDS_PATH, JSON.stringify("bad-shape"))
+    setGeminiCredentials(ctx, "bad-shape")
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
   })
@@ -271,13 +241,13 @@ describe("gemini plugin", () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        refresh_token: "refresh-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
+    setGeminiCredentials(ctx, {
+      refresh_token: "refresh-token",
+      expiry_date: nowMs - 1000,
+      client_id: TEST_CLIENT_ID,
+      client_secret: TEST_CLIENT_SECRET,
+    })
+    ctx.host.http.request.mockReturnValue({ status: 500, bodyText: "" })
 
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
@@ -287,13 +257,10 @@ describe("gemini plugin", () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "existing-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "existing-token",
+      expiry_date: nowMs - 1000,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === LOAD_CODE_ASSIST_URL) return { status: 200, bodyText: JSON.stringify({ tier: "standard-tier" }) }
@@ -314,21 +281,22 @@ describe("gemini plugin", () => {
     expect(result.lines.find((line) => line.label === "Pro")).toBeTruthy()
   })
 
-  it("continues with existing access token when oauth client creds are missing", async () => {
+  it("uses default OAuth client when account omits client credentials", async () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "existing-token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
-    ctx.host.fs.writeText(OAUTH2_PATH, "not oauth creds")
+    setGeminiCredentials(ctx, {
+      access_token: "existing-token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs - 1000,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
+      if (url === TOKEN_URL) {
+        expect(opts.bodyText).toContain(encodeURIComponent(GEMINI_CLIENT_ID))
+        expect(opts.bodyText).toContain(encodeURIComponent(GEMINI_CLIENT_SECRET))
+        return { status: 200, bodyText: JSON.stringify({ access_token: "default-client-token", expires_in: 3600 }) }
+      }
       if (url === LOAD_CODE_ASSIST_URL) {
         return { status: 200, bodyText: JSON.stringify({ tier: "legacy-tier" }) }
       }
@@ -336,7 +304,7 @@ describe("gemini plugin", () => {
         return { status: 200, bodyText: JSON.stringify({ projects: [{ projectId: "gen-lang-client-123" }] }) }
       }
       if (url === QUOTA_URL) {
-        expect(opts.headers.Authorization).toBe("Bearer existing-token")
+        expect(opts.headers.Authorization).toBe("Bearer default-client-token")
         return {
           status: 200,
           bodyText: JSON.stringify({
@@ -351,24 +319,21 @@ describe("gemini plugin", () => {
     const result = plugin.probe(ctx)
     expect(result.plan).toBe("Legacy")
     expect(result.lines.find((line) => line.label === "Pro")).toBeTruthy()
+    const updated = JSON.parse(result.updatedCredentialsJson)
+    expect(updated.accessToken).toBe("default-client-token")
   })
 
   it("continues when refresh request throws and an access token already exists", async () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "existing-token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
-    ctx.host.fs.writeText(
-      OAUTH2_PATH,
-      "const OAUTH_CLIENT_ID='client-id'; const OAUTH_CLIENT_SECRET='client-secret';"
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "existing-token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs - 1000,
+      client_id: TEST_CLIENT_ID,
+      client_secret: TEST_CLIENT_SECRET,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === TOKEN_URL) throw new Error("network")
@@ -400,18 +365,13 @@ describe("gemini plugin", () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "existing-token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
-    ctx.host.fs.writeText(
-      OAUTH2_PATH,
-      "const OAUTH_CLIENT_ID='client-id'; const OAUTH_CLIENT_SECRET='client-secret';"
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "existing-token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs - 1000,
+      client_id: TEST_CLIENT_ID,
+      client_secret: TEST_CLIENT_SECRET,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === TOKEN_URL) return { status: 500, bodyText: "{}" }
@@ -433,29 +393,20 @@ describe("gemini plugin", () => {
     expect(result.lines.find((line) => line.label === "Pro")).toBeTruthy()
   })
 
-  it("ignores non-string oauth2.js payload and continues", async () => {
+  it("uses account credentials without reading auth files", async () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "existing-token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
-    ctx.host.fs.exists = (path) => path === CREDS_PATH || path === OAUTH2_PATH
-    ctx.host.fs.readText = vi.fn((path) => {
-      if (path === CREDS_PATH) {
-        return JSON.stringify({
-          access_token: "existing-token",
-          refresh_token: "refresh-token",
-          expiry_date: nowMs - 1000,
-        })
-      }
-      if (path === OAUTH2_PATH) return null
-      return null
+    setGeminiCredentials(ctx, {
+      access_token: "existing-token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs + 3600_000,
+    })
+    ctx.host.fs.exists = vi.fn(() => {
+      throw new Error("fs.exists should not be called")
+    })
+    ctx.host.fs.readText = vi.fn(() => {
+      throw new Error("fs.readText should not be called")
     })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
@@ -479,14 +430,11 @@ describe("gemini plugin", () => {
 
   it("skips proactive refresh when expiry_date is non-numeric", async () => {
     const ctx = makeCtx()
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "token",
-        refresh_token: "refresh-token",
-        expiry_date: "not-a-number",
-      })
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "token",
+      refresh_token: "refresh-token",
+      expiry_date: "not-a-number",
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === LOAD_CODE_ASSIST_URL) return { status: 200, bodyText: JSON.stringify({ tier: "standard-tier" }) }
@@ -514,18 +462,13 @@ describe("gemini plugin", () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
-    ctx.host.fs.writeText(
-      OAUTH2_PATH,
-      "const OAUTH_CLIENT_ID='client-id'; const OAUTH_CLIENT_SECRET='client-secret';"
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs - 1000,
+      client_id: TEST_CLIENT_ID,
+      client_secret: TEST_CLIENT_SECRET,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === TOKEN_URL) return { status: 401, bodyText: JSON.stringify({ error: "unauthorized" }) }
@@ -540,14 +483,11 @@ describe("gemini plugin", () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs + 3600_000,
-      })
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs + 3600_000,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === LOAD_CODE_ASSIST_URL) return { status: 200, bodyText: JSON.stringify({ tier: "free-tier" }) }
@@ -567,14 +507,11 @@ describe("gemini plugin", () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs + 3600_000,
-      })
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs + 3600_000,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === LOAD_CODE_ASSIST_URL) return { status: 401, bodyText: "" }
@@ -589,14 +526,11 @@ describe("gemini plugin", () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs + 3600_000,
-      })
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs + 3600_000,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === LOAD_CODE_ASSIST_URL) return { status: 200, bodyText: JSON.stringify({ tier: "standard-tier" }) }
@@ -613,14 +547,11 @@ describe("gemini plugin", () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs + 3600_000,
-      })
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs + 3600_000,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === LOAD_CODE_ASSIST_URL) return { status: 200, bodyText: JSON.stringify({ tier: "standard-tier" }) }
@@ -637,14 +568,11 @@ describe("gemini plugin", () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs + 3600_000,
-      })
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs + 3600_000,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === LOAD_CODE_ASSIST_URL) return { status: 200, bodyText: JSON.stringify({ tier: "standard-tier" }) }
@@ -661,14 +589,11 @@ describe("gemini plugin", () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs + 3600_000,
-      })
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs + 3600_000,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === LOAD_CODE_ASSIST_URL) return { status: 500, bodyText: "{}" }
@@ -695,250 +620,15 @@ describe("gemini plugin", () => {
     expect(result.lines.find((line) => line.label === "Flash")).toBeTruthy()
   })
 
-  it("discovers oauth2.js via dynamic NVM version scanning", async () => {
-    const ctx = makeCtx()
-    const nowMs = 1_700_000_000_000
-    vi.spyOn(Date, "now").mockReturnValue(nowMs)
-
-    const nvmOauth2Path =
-      "~/.nvm/versions/node/v22.0.0/lib/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js"
-
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "old-token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
-    ctx.host.fs.writeText(
-      nvmOauth2Path,
-      "const OAUTH_CLIENT_ID='nvm-client-id'; const OAUTH_CLIENT_SECRET='nvm-client-secret';"
-    )
-
-    ctx.host.http.request.mockImplementation((opts) => {
-      const url = String(opts.url)
-      if (url === TOKEN_URL) {
-        return { status: 200, bodyText: JSON.stringify({ access_token: "refreshed-token", expires_in: 3600 }) }
-      }
-      if (url === LOAD_CODE_ASSIST_URL) {
-        return { status: 200, bodyText: JSON.stringify({ tier: "standard-tier" }) }
-      }
-      if (url === PROJECTS_URL) {
-        return { status: 200, bodyText: JSON.stringify({ projects: [{ projectId: "gen-lang-client-nvm" }] }) }
-      }
-      if (url === QUOTA_URL) {
-        expect(opts.headers.Authorization).toBe("Bearer refreshed-token")
-        return {
-          status: 200,
-          bodyText: JSON.stringify({
-            quotaBuckets: [{ modelId: "gemini-2.5-pro", remainingFraction: 0.5, resetTime: "2099-01-01T00:00:00Z" }],
-          }),
-        }
-      }
-      throw new Error("unexpected url: " + url)
-    })
-
-    const plugin = await loadPlugin()
-    const result = plugin.probe(ctx)
-    expect(result.lines.find((line) => line.label === "Pro")).toBeTruthy()
-    const persisted = JSON.parse(ctx.host.fs.readText(CREDS_PATH))
-    expect(persisted.access_token).toBe("refreshed-token")
-  })
-
-  it("discovers oauth2.js via dynamic fnm version scanning", async () => {
-    const ctx = makeCtx()
-    const nowMs = 1_700_000_000_000
-    vi.spyOn(Date, "now").mockReturnValue(nowMs)
-
-    const fnmOauth2Path =
-      "~/Library/Application Support/fnm/node-versions/v22.0.0/installation/lib/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js"
-
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "old-token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
-    ctx.host.fs.writeText(
-      fnmOauth2Path,
-      "const OAUTH_CLIENT_ID='fnm-client-id'; const OAUTH_CLIENT_SECRET='fnm-client-secret';"
-    )
-
-    ctx.host.http.request.mockImplementation((opts) => {
-      const url = String(opts.url)
-      if (url === TOKEN_URL) {
-        return { status: 200, bodyText: JSON.stringify({ access_token: "fnm-token", expires_in: 3600 }) }
-      }
-      if (url === LOAD_CODE_ASSIST_URL) {
-        return { status: 200, bodyText: JSON.stringify({ tier: "standard-tier" }) }
-      }
-      if (url === PROJECTS_URL) {
-        return { status: 200, bodyText: JSON.stringify({ projects: [{ projectId: "gen-lang-client-fnm" }] }) }
-      }
-      if (url === QUOTA_URL) {
-        expect(opts.headers.Authorization).toBe("Bearer fnm-token")
-        return {
-          status: 200,
-          bodyText: JSON.stringify({
-            quotaBuckets: [{ modelId: "gemini-2.5-pro", remainingFraction: 0.5, resetTime: "2099-01-01T00:00:00Z" }],
-          }),
-        }
-      }
-      throw new Error("unexpected url: " + url)
-    })
-
-    const plugin = await loadPlugin()
-    const result = plugin.probe(ctx)
-    expect(result.lines.find((line) => line.label === "Pro")).toBeTruthy()
-
-    const persisted = JSON.parse(ctx.host.fs.readText(CREDS_PATH))
-    expect(persisted.access_token).toBe("fnm-token")
-  })
-
-  it("discovers oauth2.js via nested package structure", async () => {
-    const ctx = makeCtx()
-    const nowMs = 1_700_000_000_000
-    vi.spyOn(Date, "now").mockReturnValue(nowMs)
-
-    const nestedPath =
-      "~/.npm-global/lib/node_modules/@google/gemini-cli/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js"
-
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "old-token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
-    ctx.host.fs.writeText(
-      nestedPath,
-      "const OAUTH_CLIENT_ID='nested-id'; const OAUTH_CLIENT_SECRET='nested-secret';"
-    )
-
-    ctx.host.http.request.mockImplementation((opts) => {
-      const url = String(opts.url)
-      if (url === TOKEN_URL) {
-        return { status: 200, bodyText: JSON.stringify({ access_token: "nested-token", expires_in: 3600 }) }
-      }
-      if (url === LOAD_CODE_ASSIST_URL) return { status: 200, bodyText: JSON.stringify({ tier: "standard-tier" }) }
-      if (url === PROJECTS_URL) return { status: 200, bodyText: JSON.stringify({ projects: [{ projectId: "gen-lang-client-nested" }] }) }
-      if (url === QUOTA_URL) {
-        expect(opts.headers.Authorization).toBe("Bearer nested-token")
-        return {
-          status: 200,
-          bodyText: JSON.stringify({
-            quotaBuckets: [{ modelId: "gemini-2.5-pro", remainingFraction: 0.3, resetTime: "2099-01-01T00:00:00Z" }],
-          }),
-        }
-      }
-      throw new Error("unexpected url: " + url)
-    })
-
-    const plugin = await loadPlugin()
-    const result = plugin.probe(ctx)
-    expect(result.lines.find((line) => line.label === "Pro")).toBeTruthy()
-  })
-
-  it("discovers oauth creds via Homebrew bundle chunks", async () => {
-    const ctx = makeCtx()
-    const nowMs = 1_700_000_000_000
-    vi.spyOn(Date, "now").mockReturnValue(nowMs)
-
-    const bundleDir =
-      "/opt/homebrew/opt/gemini-cli/libexec/lib/node_modules/@google/gemini-cli/bundle"
-
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "old-token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
-    ctx.host.fs.writeText(bundleDir + "/chunk-AAAAAAAA.js", "unrelated bundle code")
-    ctx.host.fs.writeText(
-      bundleDir + "/chunk-BBBBBBBB.js",
-      "const OAUTH_CLIENT_ID='brew-id'; const OAUTH_CLIENT_SECRET='brew-secret';"
-    )
-
-    ctx.host.http.request.mockImplementation((opts) => {
-      const url = String(opts.url)
-      if (url === TOKEN_URL) {
-        expect(opts.bodyText).toContain("brew-id")
-        expect(opts.bodyText).toContain("brew-secret")
-        return { status: 200, bodyText: JSON.stringify({ access_token: "brewed-token", expires_in: 3600 }) }
-      }
-      if (url === LOAD_CODE_ASSIST_URL) return { status: 200, bodyText: JSON.stringify({ tier: "standard-tier" }) }
-      if (url === PROJECTS_URL) return { status: 200, bodyText: JSON.stringify({ projects: [{ projectId: "gen-lang-client-brew" }] }) }
-      if (url === QUOTA_URL) {
-        expect(opts.headers.Authorization).toBe("Bearer brewed-token")
-        return {
-          status: 200,
-          bodyText: JSON.stringify({
-            quotaBuckets: [{ modelId: "gemini-2.5-pro", remainingFraction: 0.5, resetTime: "2099-01-01T00:00:00Z" }],
-          }),
-        }
-      }
-      throw new Error("unexpected url: " + url)
-    })
-
-    const plugin = await loadPlugin()
-    const result = plugin.probe(ctx)
-    expect(result.lines.find((line) => line.label === "Pro")).toBeTruthy()
-  })
-
-  it("logs warning when no oauth2.js is found at any path", async () => {
-    const ctx = makeCtx()
-    const nowMs = 1_700_000_000_000
-    vi.spyOn(Date, "now").mockReturnValue(nowMs)
-
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "existing-token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs - 1000,
-      })
-    )
-
-    ctx.host.http.request.mockImplementation((opts) => {
-      const url = String(opts.url)
-      if (url === LOAD_CODE_ASSIST_URL) return { status: 200, bodyText: JSON.stringify({ tier: "standard-tier" }) }
-      if (url === PROJECTS_URL) return { status: 200, bodyText: JSON.stringify({ projects: [{ projectId: "gen-lang-client-warn" }] }) }
-      if (url === QUOTA_URL) {
-        return {
-          status: 200,
-          bodyText: JSON.stringify({
-            quotaBuckets: [{ modelId: "gemini-2.5-pro", remainingFraction: 0.5, resetTime: "2099-01-01T00:00:00Z" }],
-          }),
-        }
-      }
-      throw new Error("unexpected url: " + url)
-    })
-
-    const plugin = await loadPlugin()
-    plugin.probe(ctx)
-
-    const warnCalls = ctx.host.log.warn.mock.calls.map((c) => c[0])
-    expect(warnCalls.some((msg) => msg.includes("not found in any known install path"))).toBe(true)
-  })
-
   it("uses snake_case quota fields and still renders lines", async () => {
     const ctx = makeCtx()
     const nowMs = 1_700_000_000_000
     vi.spyOn(Date, "now").mockReturnValue(nowMs)
-    ctx.host.fs.writeText(
-      CREDS_PATH,
-      JSON.stringify({
-        access_token: "token",
-        refresh_token: "refresh-token",
-        expiry_date: nowMs + 3600_000,
-      })
-    )
+    setGeminiCredentials(ctx, {
+      access_token: "token",
+      refresh_token: "refresh-token",
+      expiry_date: nowMs + 3600_000,
+    })
     ctx.host.http.request.mockImplementation((opts) => {
       const url = String(opts.url)
       if (url === LOAD_CODE_ASSIST_URL) return { status: 200, bodyText: JSON.stringify({ tier: "standard-tier" }) }

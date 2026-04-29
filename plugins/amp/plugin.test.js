@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { makeCtx } from "../test-helpers.js"
 
-const SECRETS_FILE = "~/.local/share/amp/secrets.json"
-const SECRETS_KEY = "apiKey@https://ampcode.com/"
 const API_URL = "https://ampcode.com/api/internal"
 
 const loadPlugin = async () => {
@@ -11,9 +9,7 @@ const loadPlugin = async () => {
 }
 
 function writeSecrets(ctx, apiKey) {
-  var obj = {}
-  obj[SECRETS_KEY] = apiKey || "test-api-key"
-  ctx.host.fs.writeText(SECRETS_FILE, JSON.stringify(obj))
+  ctx.credentials = { apiKey: apiKey || "test-api-key" }
 }
 
 function balanceResponse(displayText) {
@@ -49,24 +45,24 @@ describe("amp plugin", () => {
 
   // --- Auth ---
 
-  it("throws when secrets file not found", async () => {
+  it("throws when credentials are missing", async () => {
     var ctx = makeCtx()
     var plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).toThrow("Amp not installed")
+    expect(() => plugin.probe(ctx)).toThrow("Amp API key missing")
   })
 
-  it("throws when secrets file has no api key", async () => {
+  it("throws when credentials have no api key", async () => {
     var ctx = makeCtx()
-    ctx.host.fs.writeText(SECRETS_FILE, JSON.stringify({ other: "value" }))
+    ctx.credentials = { other: "value" }
     var plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).toThrow("Amp not installed")
+    expect(() => plugin.probe(ctx)).toThrow("Amp API key missing")
   })
 
-  it("throws on invalid JSON in secrets file", async () => {
+  it("throws when api key is blank", async () => {
     var ctx = makeCtx()
-    ctx.host.fs.writeText(SECRETS_FILE, "{bad json")
+    ctx.credentials = { apiKey: " " }
     var plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).toThrow("Amp not installed")
+    expect(() => plugin.probe(ctx)).toThrow("Amp API key missing")
   })
 
   // --- API request ---

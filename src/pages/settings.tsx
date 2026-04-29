@@ -1,23 +1,6 @@
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { GripVertical } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { AccountSettingsSection } from "@/components/account-settings-section";
 import { GlobalShortcutSection } from "@/components/global-shortcut-section";
 import { getBarFillLayout, getTrayIconSizePx } from "@/lib/tray-bars-icon";
 import {
@@ -26,6 +9,7 @@ import {
   MENUBAR_ICON_STYLE_OPTIONS,
   RESET_TIMER_DISPLAY_OPTIONS,
   THEME_OPTIONS,
+  type AccountOrderByPlugin,
   type AutoUpdateIntervalMinutes,
   type DisplayMode,
   type GlobalShortcut,
@@ -34,13 +18,8 @@ import {
   type ThemeMode,
 } from "@/lib/settings";
 import type { TraySettingsPreview } from "@/hooks/app/use-tray-icon";
+import type { SettingsPluginState } from "@/hooks/app/use-settings-plugin-list";
 import { cn } from "@/lib/utils";
-
-interface PluginConfig {
-  id: string;
-  name: string;
-  enabled: boolean;
-}
 
 const TRAY_PREVIEW_SIZE_PX = getTrayIconSizePx(1);
 
@@ -54,7 +33,7 @@ function getPreviewBarLayout(fraction: number): { fillPercent: number; remainder
   };
 }
 
-function ProviderIconMask({
+function PluginIconMask({
   iconUrl,
   isActive,
   sizePx,
@@ -106,7 +85,7 @@ function MenubarIconStylePreview({
   if (style === "provider") {
     return (
       <div className="inline-flex items-center gap-0.5">
-        <ProviderIconMask
+        <PluginIconMask
           iconUrl={traySettingsPreview.providerIconUrl}
           isActive={isActive}
           sizePx={TRAY_PREVIEW_SIZE_PX}
@@ -164,7 +143,7 @@ function MenubarIconStylePreview({
     const clamped = Math.max(0, Math.min(1, fraction));
     return (
       <div className="inline-flex items-center gap-1">
-        <ProviderIconMask
+        <PluginIconMask
           iconUrl={traySettingsPreview.providerIconUrl}
           isActive={isActive}
           sizePx={TRAY_PREVIEW_SIZE_PX}
@@ -193,73 +172,11 @@ function MenubarIconStylePreview({
   return null;
 }
 
-function SortablePluginItem({
-  plugin,
-  onToggle,
-}: {
-  plugin: PluginConfig;
-  onToggle: (id: string) => void;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: plugin.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      onClick={() => onToggle(plugin.id)}
-      className={cn(
-        "flex items-center gap-3 px-3 py-2 rounded-md bg-card cursor-pointer",
-        "border border-transparent",
-        isDragging && "opacity-50 border-border"
-      )}
-    >
-      <button
-        type="button"
-        onClick={(e) => e.stopPropagation()}
-        className="touch-none cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground transition-colors"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-
-      <span
-        className={cn(
-          "flex-1 text-sm",
-          !plugin.enabled && "text-muted-foreground"
-        )}
-      >
-        {plugin.name}
-      </span>
-
-      {/* Wrap to stop Base UI's internal input.click() from bubbling to the row div */}
-      <span onClick={(e) => e.stopPropagation()}>
-        <Checkbox
-          key={`${plugin.id}-${plugin.enabled}`}
-          checked={plugin.enabled}
-          onCheckedChange={() => onToggle(plugin.id)}
-        />
-      </span>
-    </div>
-  );
-}
-
 interface SettingsPageProps {
-  plugins: PluginConfig[];
-  onReorder: (orderedIds: string[]) => void;
-  onToggle: (id: string) => void;
+  plugins: SettingsPluginState[];
+  onAccountChanged: (pluginId: string) => void;
+  onAccountOrderChanged?: (order: AccountOrderByPlugin) => void;
+  onPluginEnabledChange: (pluginId: string, enabled: boolean) => void;
   autoUpdateInterval: AutoUpdateIntervalMinutes;
   onAutoUpdateIntervalChange: (value: AutoUpdateIntervalMinutes) => void;
   themeMode: ThemeMode;
@@ -279,8 +196,9 @@ interface SettingsPageProps {
 
 export function SettingsPage({
   plugins,
-  onReorder,
-  onToggle,
+  onAccountChanged,
+  onAccountOrderChanged,
+  onPluginEnabledChange,
   autoUpdateInterval,
   onAutoUpdateIntervalChange,
   themeMode,
@@ -297,25 +215,6 @@ export function SettingsPage({
   startOnLogin,
   onStartOnLoginChange,
 }: SettingsPageProps) {
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-
-    if (over && active.id !== over.id) {
-      const oldIndex = plugins.findIndex((item) => item.id === active.id);
-      const newIndex = plugins.findIndex((item) => item.id === over.id);
-      if (oldIndex === -1 || newIndex === -1) return;
-      const next = arrayMove(plugins, oldIndex, newIndex);
-      onReorder(next.map((item) => item.id));
-    }
-  };
-
   return (
     <div className="py-3 space-y-4">
       <section>
@@ -489,32 +388,12 @@ export function SettingsPage({
           Start on login
         </label>
       </section>
-      <section>
-        <h3 className="text-lg font-semibold mb-0">Plugins</h3>
-        <p className="text-sm text-muted-foreground mb-2">
-          Your AI coding lineup
-        </p>
-        <div className="bg-muted/50 rounded-lg p-1 space-y-1">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={plugins.map((p) => p.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              {plugins.map((plugin) => (
-                <SortablePluginItem
-                  key={plugin.id}
-                  plugin={plugin}
-                  onToggle={onToggle}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
-        </div>
-      </section>
+      <AccountSettingsSection
+        plugins={plugins}
+        onAccountChanged={onAccountChanged}
+        onAccountOrderChanged={onAccountOrderChanged}
+        onPluginEnabledChange={onPluginEnabledChange}
+      />
     </div>
   );
 }

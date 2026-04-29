@@ -4,11 +4,13 @@ import type { PluginMeta } from "@/lib/plugin-types";
 // Refresh cooldown duration in milliseconds (5 minutes)
 export const REFRESH_COOLDOWN_MS = 300_000;
 
-// Spec: persist plugin order + disabled list; new plugins append, default disabled unless in DEFAULT_ENABLED_PLUGINS.
+// Persist plugin order and enabled state.
 export type PluginSettings = {
   order: string[];
   disabled: string[];
 };
+
+export type AccountOrderByPlugin = Record<string, string[]>;
 
 export type AutoUpdateIntervalMinutes = 5 | 15 | 30 | 60;
 
@@ -24,6 +26,7 @@ export type GlobalShortcut = string | null;
 
 const SETTINGS_STORE_PATH = "settings.json";
 const PLUGIN_SETTINGS_KEY = "plugins";
+const ACCOUNT_ORDER_KEY = "accountOrderByPlugin";
 const AUTO_UPDATE_SETTINGS_KEY = "autoUpdateInterval";
 const THEME_MODE_KEY = "themeMode";
 const DISPLAY_MODE_KEY = "displayMode";
@@ -78,8 +81,6 @@ export const RESET_TIMER_DISPLAY_OPTIONS: { value: ResetTimerDisplayMode; label:
 
 const store = new LazyStore(SETTINGS_STORE_PATH);
 
-const DEFAULT_ENABLED_PLUGINS = new Set(["claude", "codex", "cursor"]);
-
 export const DEFAULT_PLUGIN_SETTINGS: PluginSettings = {
   order: [],
   disabled: [],
@@ -96,6 +97,27 @@ export async function loadPluginSettings(): Promise<PluginSettings> {
 
 export async function savePluginSettings(settings: PluginSettings): Promise<void> {
   await store.set(PLUGIN_SETTINGS_KEY, settings);
+  await store.save();
+}
+
+export async function loadAccountOrderByPlugin(): Promise<AccountOrderByPlugin> {
+  const stored = await store.get<unknown>(ACCOUNT_ORDER_KEY);
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+
+  const result: AccountOrderByPlugin = {};
+  for (const [pluginId, ids] of Object.entries(stored as Record<string, unknown>)) {
+    if (!Array.isArray(ids)) continue;
+    const normalized = ids
+      .filter((id): id is string => typeof id === "string")
+      .map((id) => id.trim())
+      .filter(Boolean);
+    if (normalized.length > 0) result[pluginId] = normalized;
+  }
+  return result;
+}
+
+export async function saveAccountOrderByPlugin(orderByPlugin: AccountOrderByPlugin): Promise<void> {
+  await store.set(ACCOUNT_ORDER_KEY, orderByPlugin);
   await store.save();
 }
 
@@ -133,21 +155,19 @@ export function normalizePluginSettings(
     seen.add(id);
     order.push(id);
   }
-  const newlyAdded: string[] = [];
   for (const id of knownIds) {
     if (!seen.has(id)) {
       seen.add(id);
       order.push(id);
-      newlyAdded.push(id);
     }
   }
 
-  const disabled = settings.disabled.filter((id) => knownSet.has(id));
-  for (const id of newlyAdded) {
-    if (!DEFAULT_ENABLED_PLUGINS.has(id) && !disabled.includes(id)) {
-      disabled.push(id);
-    }
+  const disabled: string[] = [];
+  const disabledSet = new Set(Array.isArray(settings.disabled) ? settings.disabled : []);
+  for (const id of order) {
+    if (disabledSet.has(id)) disabled.push(id);
   }
+
   return { order, disabled };
 }
 
@@ -273,8 +293,8 @@ export async function migrateLegacyTraySettings(): Promise<void> {
 }
 
 export function getEnabledPluginIds(settings: PluginSettings): string[] {
-  const disabledSet = new Set(settings.disabled);
-  return settings.order.filter((id) => !disabledSet.has(id));
+  const disabled = new Set(settings.disabled ?? []);
+  return settings.order.filter((id) => !disabled.has(id));
 }
 
 function isGlobalShortcut(value: unknown): value is GlobalShortcut {

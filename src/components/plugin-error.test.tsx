@@ -12,4 +12,10 @@ describe("PluginError", () => {
     render(<PluginError message="Check `config.json` file" />)
     expect(screen.getByText("config.json")).toBeInTheDocument()
   })
+
+  it("renders account context when provided", () => {
+    render(<PluginError message="No credentials" contextLabel="Work" contextAccountId="acc-1" />)
+    expect(screen.getByText("Work")).toBeInTheDocument()
+    expect(screen.getByText("Work")).toHaveAttribute("title", "Account ID: acc-1")
+  })
 })

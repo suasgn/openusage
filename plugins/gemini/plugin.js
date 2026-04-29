@@ -1,81 +1,10 @@
 (function () {
-  const SETTINGS_PATH = "~/.gemini/settings.json"
-  const CREDS_PATH = "~/.gemini/oauth_creds.json"
-  const OAUTH2_SUFFIX_FLAT = "/@google/gemini-cli-core/dist/src/code_assist/oauth2.js"
-  const OAUTH2_SUFFIX_NESTED = "/@google/gemini-cli/node_modules/@google/gemini-cli-core/dist/src/code_assist/oauth2.js"
-  const BUNDLE_SUFFIX = "/@google/gemini-cli/bundle"
-
-  const STATIC_MODULE_ROOTS = [
-    "~/.bun/install/global/node_modules",
-    "~/.npm-global/lib/node_modules",
-    "/usr/local/lib/node_modules",
-    "~/Library/pnpm/global/5/node_modules",
-  ]
-
-  const STATIC_NESTED_ONLY = [
-    "/opt/homebrew/opt/gemini-cli/libexec/lib/node_modules",
-    "/usr/local/opt/gemini-cli/libexec/lib/node_modules",
-  ]
-
-  const VERSION_MANAGER_ROOTS = [
-    { root: "~/.nvm/versions/node", modulePath: "/lib/node_modules" },
-    { root: "~/Library/Application Support/fnm/node-versions", modulePath: "/installation/lib/node_modules" },
-  ]
-
-  function listDirSafe(ctx, path) {
-    try {
-      return ctx.host.fs.listDir(path)
-    } catch (e) {
-      return []
-    }
-  }
-
-  function buildOauthCandidatePaths(ctx) {
-    var paths = []
-
-    for (var i = 0; i < STATIC_MODULE_ROOTS.length; i += 1) {
-      paths.push(STATIC_MODULE_ROOTS[i] + OAUTH2_SUFFIX_FLAT)
-      paths.push(STATIC_MODULE_ROOTS[i] + OAUTH2_SUFFIX_NESTED)
-    }
-
-    for (var i = 0; i < STATIC_NESTED_ONLY.length; i += 1) {
-      paths.push(STATIC_NESTED_ONLY[i] + OAUTH2_SUFFIX_NESTED)
-    }
-
-    // Homebrew builds bundle everything into bundle/chunk-*.js — hash names vary per version
-    for (var i = 0; i < STATIC_NESTED_ONLY.length; i += 1) {
-      var bundleDir = STATIC_NESTED_ONLY[i] + BUNDLE_SUFFIX
-      var entries = listDirSafe(ctx, bundleDir)
-      for (var j = 0; j < entries.length; j += 1) {
-        var name = entries[j]
-        if (name.indexOf("chunk-") === 0 && name.slice(-3) === ".js") {
-          paths.push(bundleDir + "/" + name)
-        }
-      }
-    }
-
-    for (var i = 0; i < VERSION_MANAGER_ROOTS.length; i += 1) {
-      var versionManager = VERSION_MANAGER_ROOTS[i]
-      var root = versionManager.root
-      var versions = listDirSafe(ctx, root)
-      for (var j = 0; j < versions.length; j += 1) {
-        var base = root + "/" + versions[j] + versionManager.modulePath
-        paths.push(base + OAUTH2_SUFFIX_FLAT)
-        paths.push(base + OAUTH2_SUFFIX_NESTED)
-      }
-    }
-
-    // volta stores packages differently
-    paths.push("~/.volta/tools/image/packages/@google/gemini-cli/lib/node_modules" + OAUTH2_SUFFIX_NESTED)
-    paths.push("~/.volta/tools/image/packages/@google/gemini-cli/lib/node_modules" + OAUTH2_SUFFIX_FLAT)
-
-    return paths
-  }
-
   const LOAD_CODE_ASSIST_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
   const QUOTA_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
   const PROJECTS_URL = "https://cloudresourcemanager.googleapis.com/v1/projects"
   const TOKEN_URL = "https://oauth2.googleapis.com/token"
+  const OAUTH_CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+  const OAUTH_CLIENT_SECRET = "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"
   const REFRESH_BUFFER_MS = 5 * 60 * 1000
 
   const IDE_METADATA = {
@@ -85,74 +14,27 @@
     duetProject: "default",
   }
 
-  function loadSettings(ctx) {
-    if (!ctx.host.fs.exists(SETTINGS_PATH)) return null
-    try {
-      return ctx.util.tryParseJson(ctx.host.fs.readText(SETTINGS_PATH))
-    } catch (e) {
-      ctx.host.log.warn("failed reading settings: " + String(e))
-      return null
-    }
-  }
-
-  function assertSupportedAuthType(ctx) {
-    const settings = loadSettings(ctx)
-    const authType =
-      settings && typeof settings.authType === "string" ? settings.authType.trim().toLowerCase() : null
-
-    if (!authType || authType === "oauth-personal") return
-    if (authType === "api-key") {
-      throw "Gemini auth type api-key is not supported by this plugin yet."
-    }
-    if (authType === "vertex-ai") {
-      throw "Gemini auth type vertex-ai is not supported by this plugin yet."
-    }
-    throw "Gemini unsupported auth type: " + authType
+  function normalizeExpiryMs(value) {
+    const n = Number(value)
+    if (!Number.isFinite(n) || n <= 0) return undefined
+    return n > 10_000_000_000 ? n : n * 1000
   }
 
   function loadOauthCreds(ctx) {
-    if (!ctx.host.fs.exists(CREDS_PATH)) return null
-    try {
-      const parsed = ctx.util.tryParseJson(ctx.host.fs.readText(CREDS_PATH))
-      if (!parsed || typeof parsed !== "object") return null
-      if (!parsed.access_token && !parsed.refresh_token) return null
-      return parsed
-    } catch (e) {
-      ctx.host.log.warn("failed reading creds: " + String(e))
-      return null
+    const source = ctx.credentials
+    if (!source || typeof source !== "object") return null
+    const accessToken = source.accessToken || source.access_token || ""
+    const refreshToken = source.refreshToken || source.refresh_token || ""
+    const idToken = source.idToken || source.id_token || ""
+    if (!accessToken && !refreshToken && !idToken) return null
+    return {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      id_token: idToken,
+      expiry_date: normalizeExpiryMs(source.expiresAt || source.expiryDate || source.expiry_date),
+      client_id: source.clientId || source.client_id || OAUTH_CLIENT_ID,
+      client_secret: source.clientSecret || source.client_secret || OAUTH_CLIENT_SECRET,
     }
-  }
-
-  function saveOauthCreds(ctx, creds) {
-    try {
-      ctx.host.fs.writeText(CREDS_PATH, JSON.stringify(creds, null, 2))
-    } catch (e) {
-      ctx.host.log.warn("failed persisting creds: " + String(e))
-    }
-  }
-
-  function parseOauthClientCreds(text) {
-    if (!text || typeof text !== "string") return null
-    const idMatch = text.match(/OAUTH_CLIENT_ID\s*=\s*['"]([^'"]+)['"]/)
-    const secretMatch = text.match(/OAUTH_CLIENT_SECRET\s*=\s*['"]([^'"]+)['"]/)
-    if (!idMatch || !secretMatch) return null
-    return { clientId: idMatch[1], clientSecret: secretMatch[1] }
-  }
-
-  function loadOauthClientCreds(ctx) {
-    const candidates = buildOauthCandidatePaths(ctx)
-    for (let i = 0; i < candidates.length; i += 1) {
-      const path = candidates[i]
-      if (!ctx.host.fs.exists(path)) continue
-      try {
-        const parsed = parseOauthClientCreds(ctx.host.fs.readText(path))
-        if (parsed) return parsed
-      } catch (e) {
-        ctx.host.log.warn("failed reading oauth candidate at " + path + ": " + String(e))
-      }
-    }
-    ctx.host.log.warn("Gemini OAuth client credentials not found in any known install path")
-    return null
   }
 
   function readNumber(value) {
@@ -180,8 +62,8 @@
 
   function refreshToken(ctx, creds) {
     if (!creds.refresh_token) return null
-    const clientCreds = loadOauthClientCreds(ctx)
-    if (!clientCreds) return null
+    const clientId = creds.client_id || OAUTH_CLIENT_ID
+    const clientSecret = creds.client_secret || OAUTH_CLIENT_SECRET
 
     let resp
     try {
@@ -191,9 +73,9 @@
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         bodyText:
           "client_id=" +
-          encodeURIComponent(clientCreds.clientId) +
+          encodeURIComponent(clientId) +
           "&client_secret=" +
-          encodeURIComponent(clientCreds.clientSecret) +
+          encodeURIComponent(clientSecret) +
           "&refresh_token=" +
           encodeURIComponent(creds.refresh_token) +
           "&grant_type=refresh_token",
@@ -219,8 +101,19 @@
       creds.expiry_date = Date.now() + data.expires_in * 1000
     }
 
-    saveOauthCreds(ctx, creds)
     return creds.access_token
+  }
+
+  function credentialsJson(creds) {
+    return JSON.stringify({
+      type: "oauth",
+      accessToken: creds.access_token || "",
+      refreshToken: creds.refresh_token || "",
+      idToken: creds.id_token || "",
+      expiresAt: creds.expiry_date ? Math.floor(Number(creds.expiry_date) / 1000) : null,
+      clientId: creds.client_id || OAUTH_CLIENT_ID,
+      clientSecret: creds.client_secret || OAUTH_CLIENT_SECRET,
+    })
   }
 
   function postJson(ctx, url, accessToken, body) {
@@ -411,8 +304,6 @@
   }
 
   function probe(ctx) {
-    assertSupportedAuthType(ctx)
-
     const creds = loadOauthCreds(ctx)
     if (!creds) throw "Not logged in. Run `gemini` and complete the OAuth prompt."
 
@@ -442,7 +333,7 @@
     if (email) lines.push(ctx.line.text({ label: "Account", value: email }))
     if (!lines.length) lines.push(ctx.line.badge({ label: "Status", text: "No usage data", color: "#a3a3a3" }))
 
-    return { plan: plan || undefined, lines }
+    return { plan: plan || undefined, lines, updatedCredentialsJson: credentialsJson(creds) }
   }
 
   globalThis.__openusage_plugin = { id: "gemini", probe }

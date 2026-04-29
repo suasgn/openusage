@@ -14,9 +14,7 @@ import { useProbeAutoUpdate } from "@/hooks/app/use-probe-auto-update"
 describe("useProbeAutoUpdate", () => {
   beforeEach(() => {
     getEnabledPluginIdsMock.mockReset()
-    getEnabledPluginIdsMock.mockImplementation((settings: { order: string[]; disabled: string[] }) =>
-      settings.order.filter((id) => !settings.disabled.includes(id))
-    )
+    getEnabledPluginIdsMock.mockImplementation((settings: { order: string[] }) => settings.order)
   })
 
   it("keeps auto-update cleared when plugin settings are missing", () => {

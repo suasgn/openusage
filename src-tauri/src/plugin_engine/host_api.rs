@@ -71,7 +71,7 @@ fn current_macos_keychain_account_from_user_env(user_env: Option<String>) -> Str
         .unwrap_or_else(|| "openusage-user".to_string())
 }
 
-fn current_macos_keychain_account() -> String {
+pub(crate) fn current_macos_keychain_account() -> String {
     current_macos_keychain_account_from_user_env(read_env_from_process("USER"))
 }
 
@@ -176,7 +176,7 @@ fn read_env_from_interactive_shells(name: &str) -> Option<String> {
     None
 }
 
-fn resolve_env_value(name: &str) -> Option<String> {
+pub(crate) fn resolve_env_value(name: &str) -> Option<String> {
     // Prefer the current process env (fast + supports launchctl/terminal-launch).
     if let Some(value) = read_env_from_process(name) {
         return Some(value);
@@ -193,6 +193,49 @@ fn resolve_env_value(name: &str) -> Option<String> {
         cache.insert(name.to_string(), resolved.clone());
     }
     resolved
+}
+
+pub(crate) fn read_keychain_generic_password(service: &str) -> std::result::Result<String, String> {
+    if !cfg!(target_os = "macos") {
+        return Err("keychain API is only supported on macOS".to_string());
+    }
+
+    let output = std::process::Command::new("security")
+        .args(keychain_find_generic_password_args(service))
+        .output()
+        .map_err(|e| format!("keychain read failed: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let first_line = stderr.lines().next().unwrap_or("").trim();
+        return Err(format!("keychain item not found: {first_line}"));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+pub(crate) fn read_keychain_generic_password_for_current_user(
+    service: &str,
+) -> std::result::Result<String, String> {
+    if !cfg!(target_os = "macos") {
+        return Err("keychain API is only supported on macOS".to_string());
+    }
+
+    let account = current_macos_keychain_account();
+    let output = std::process::Command::new("security")
+        .args(keychain_find_generic_password_args_for_account(
+            service, &account,
+        ))
+        .output()
+        .map_err(|e| format!("keychain read failed: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let first_line = stderr.lines().next().unwrap_or("").trim();
+        return Err(format!("keychain item not found: {first_line}"));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 /// Redact sensitive value to first4...last4 format (UTF-8 safe)
@@ -379,7 +422,10 @@ pub(crate) fn redact_log_message(msg: &str) -> String {
     result
 }
 
-fn decrypt_aes_256_gcm_envelope(envelope: &str, key_b64: &str) -> Result<String, String> {
+pub(crate) fn decrypt_aes_256_gcm_envelope(
+    envelope: &str,
+    key_b64: &str,
+) -> Result<String, String> {
     let trimmed_envelope = envelope.trim();
     let trimmed_key = key_b64.trim();
     let parts: Vec<&str> = trimmed_envelope.split(':').collect();
@@ -2242,6 +2288,51 @@ fn inject_keychain<'js>(
     Ok(())
 }
 
+pub(crate) fn sqlite_query_readonly(
+    db_path: &str,
+    sql: &str,
+) -> std::result::Result<String, String> {
+    if sql.lines().any(|line| line.trim_start().starts_with('.')) {
+        return Err("sqlite3 dot-commands are not allowed".to_string());
+    }
+    let expanded = expand_path(db_path);
+
+    // Prefer a normal read-only open so WAL contents are visible (common for app state DBs).
+    // Fall back to immutable=1 to bypass WAL/SHM lock issues after macOS sleep.
+    let primary = std::process::Command::new("sqlite3")
+        .args(["-readonly", "-json", &expanded, sql])
+        .output()
+        .map_err(|e| format!("sqlite3 exec failed: {e}"))?;
+
+    if primary.status.success() {
+        return Ok(String::from_utf8_lossy(&primary.stdout).to_string());
+    }
+
+    // Percent-encode special chars for valid URI (% must be first!)
+    let encoded = expanded
+        .replace('%', "%25")
+        .replace(' ', "%20")
+        .replace('#', "%23")
+        .replace('?', "%3F");
+    let uri_path = format!("file:{encoded}?immutable=1");
+    let fallback = std::process::Command::new("sqlite3")
+        .args(["-readonly", "-json", &uri_path, sql])
+        .output()
+        .map_err(|e| format!("sqlite3 exec failed: {e}"))?;
+
+    if !fallback.status.success() {
+        let stderr_primary = String::from_utf8_lossy(&primary.stderr);
+        let stderr_fallback = String::from_utf8_lossy(&fallback.stderr);
+        return Err(format!(
+            "sqlite3 error: {} (fallback: {})",
+            stderr_primary.trim(),
+            stderr_fallback.trim()
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&fallback.stdout).to_string())
+}
+
 fn inject_sqlite<'js>(ctx: &Ctx<'js>, host: &Object<'js>) -> rquickjs::Result<()> {
     let sqlite_obj = Object::new(ctx.clone())?;
 
@@ -2348,7 +2439,7 @@ fn iso_now() -> String {
         })
 }
 
-fn expand_path(path: &str) -> String {
+pub(crate) fn expand_path(path: &str) -> String {
     if path == "~" {
         if let Some(home) = dirs::home_dir() {
             return home.to_string_lossy().to_string();

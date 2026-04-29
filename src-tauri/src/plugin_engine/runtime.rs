@@ -43,14 +43,30 @@ pub enum MetricLine {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginOutput {
-    pub provider_id: String,
+    pub plugin_id: String,
     pub display_name: String,
     pub plan: Option<String>,
     pub lines: Vec<MetricLine>,
     pub icon_url: String,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub updated_credentials: Option<serde_json::Value>,
 }
 
-pub fn run_probe(plugin: &LoadedPlugin, app_data_dir: &PathBuf, app_version: &str) -> PluginOutput {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProbeAccountContext {
+    pub id: String,
+    pub label: String,
+    pub settings: serde_json::Value,
+}
+
+pub fn run_probe(
+    plugin: &LoadedPlugin,
+    app_data_dir: &PathBuf,
+    app_version: &str,
+    account: Option<ProbeAccountContext>,
+    credentials: Option<serde_json::Value>,
+) -> PluginOutput {
     let fallback = error_output(plugin, "runtime error".to_string());
 
     let rt = match Runtime::new() {
@@ -84,6 +100,9 @@ pub fn run_probe(plugin: &LoadedPlugin, app_data_dir: &PathBuf, app_version: &st
         }
         if host_api::inject_utils(&ctx).is_err() {
             return error_output(plugin, "utils injection failed".to_string());
+        }
+        if inject_account_context(&ctx, account.as_ref(), credentials.as_ref()).is_err() {
+            return error_output(plugin, "account context injection failed".to_string());
         }
 
         if ctx.eval::<(), _>(entry_script.as_bytes()).is_err() {
@@ -135,6 +154,12 @@ pub fn run_probe(plugin: &LoadedPlugin, app_data_dir: &PathBuf, app_version: &st
             .ok()
             .filter(|s| !s.is_empty());
 
+        let updated_credentials = result
+            .get::<_, String>("updatedCredentialsJson")
+            .ok()
+            .and_then(|value| serde_json::from_str::<serde_json::Value>(&value).ok())
+            .filter(|value| value.is_object());
+
         let lines = match parse_lines(&result) {
             Ok(lines) if !lines.is_empty() => lines,
             Ok(_) => vec![error_line("no lines returned".to_string())],
@@ -142,13 +167,32 @@ pub fn run_probe(plugin: &LoadedPlugin, app_data_dir: &PathBuf, app_version: &st
         };
 
         PluginOutput {
-            provider_id: plugin_id,
+            plugin_id,
             display_name,
             plan,
             lines,
             icon_url,
+            updated_credentials,
         }
     })
+}
+
+fn inject_account_context(
+    ctx: &Ctx<'_>,
+    account: Option<&ProbeAccountContext>,
+    credentials: Option<&serde_json::Value>,
+) -> rquickjs::Result<()> {
+    let account_json = serde_json::to_string(&account).unwrap_or_else(|_| "null".to_string());
+    let credentials_json =
+        serde_json::to_string(&credentials).unwrap_or_else(|_| "null".to_string());
+    let account_literal =
+        serde_json::to_string(&account_json).unwrap_or_else(|_| "\"null\"".to_string());
+    let credentials_literal =
+        serde_json::to_string(&credentials_json).unwrap_or_else(|_| "\"null\"".to_string());
+    let script = format!(
+        "__openusage_ctx.account = JSON.parse({account_literal});\n__openusage_ctx.credentials = JSON.parse({credentials_literal});"
+    );
+    ctx.eval::<(), _>(script.as_bytes())
 }
 
 fn parse_lines(result: &Object) -> Result<Vec<MetricLine>, String> {
@@ -436,11 +480,12 @@ fn parse_lines(result: &Object) -> Result<Vec<MetricLine>, String> {
 
 fn error_output(plugin: &LoadedPlugin, message: String) -> PluginOutput {
     PluginOutput {
-        provider_id: plugin.manifest.id.clone(),
+        plugin_id: plugin.manifest.id.clone(),
         display_name: plugin.manifest.name.clone(),
         plan: None,
         lines: vec![error_line(message)],
         icon_url: plugin.icon_data_url.clone(),
+        updated_credentials: None,
     }
 }
 
@@ -488,6 +533,7 @@ mod tests {
                 brand_color: None,
                 lines: vec![],
                 links: vec![],
+                auth: None,
             },
             plugin_dir: PathBuf::from("."),
             entry_script: entry_script.to_string(),
@@ -521,7 +567,7 @@ mod tests {
             };
             "#,
         );
-        let output = run_probe(&plugin, &temp_app_dir("sync"), "0.0.0");
+        let output = run_probe(&plugin, &temp_app_dir("sync"), "0.0.0", None, None);
         assert_eq!(error_text(output), "boom");
     }
 
@@ -536,7 +582,7 @@ mod tests {
             };
             "#,
         );
-        let output = run_probe(&plugin, &temp_app_dir("async"), "0.0.0");
+        let output = run_probe(&plugin, &temp_app_dir("async"), "0.0.0", None, None);
         assert_eq!(error_text(output), "boom");
     }
 

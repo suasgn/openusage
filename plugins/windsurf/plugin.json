@@ -6,6 +6,45 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#111111",
+  "auth": {
+    "defaultStrategyId": "apiKey",
+    "strategies": [
+      {
+        "id": "apiKey",
+        "label": "API Key",
+        "kind": "apiKey",
+        "fields": [
+          { "name": "apiKey", "label": "API Key", "secret": true, "required": true },
+          { "name": "ideName", "label": "IDE", "placeholder": "windsurf" }
+        ],
+        "credentialTemplate": { "apiKey": "", "ideName": "windsurf" },
+        "importSources": [
+          {
+            "id": "windsurf-state-db",
+            "kind": "sqliteJson",
+            "dbPath": "~/Library/Application Support/Windsurf/User/globalStorage/state.vscdb",
+            "query": "SELECT value FROM ItemTable WHERE key = 'windsurfAuthStatus' LIMIT 1",
+            "valuePointer": "/0/value",
+            "json": {
+              "constants": { "type": "apiKey", "ideName": "windsurf" },
+              "fields": [{ "target": "apiKey", "pointer": "/apiKey", "required": true, "normalize": "trim" }]
+            }
+          },
+          {
+            "id": "windsurf-next-state-db",
+            "kind": "sqliteJson",
+            "dbPath": "~/Library/Application Support/Windsurf - Next/User/globalStorage/state.vscdb",
+            "query": "SELECT value FROM ItemTable WHERE key = 'windsurfAuthStatus' LIMIT 1",
+            "valuePointer": "/0/value",
+            "json": {
+              "constants": { "type": "apiKey", "ideName": "windsurf-next" },
+              "fields": [{ "target": "apiKey", "pointer": "/apiKey", "required": true, "normalize": "trim" }]
+            }
+          }
+        ]
+      }
+    ]
+  },
   "lines": [
     { "type": "progress", "label": "Daily quota", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Weekly quota", "scope": "overview" },

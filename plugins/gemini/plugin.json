@@ -6,6 +6,59 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#4285F4",
+  "auth": {
+    "defaultStrategyId": "oauth",
+    "strategies": [
+      {
+        "id": "oauth",
+        "label": "Google OAuth",
+        "kind": "oauthPkce",
+        "credentialTemplate": {
+          "type": "oauth",
+          "accessToken": "",
+          "refreshToken": "",
+          "idToken": "",
+          "expiresAt": null,
+          "clientId": "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
+          "clientSecret": "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"
+        },
+        "oauth": {
+          "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+          "tokenUrl": "https://oauth2.googleapis.com/token",
+          "clientId": "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
+          "clientSecret": "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",
+          "scopes": [
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile"
+          ],
+          "redirectHost": "127.0.0.1",
+          "callbackPath": "/oauth2callback",
+          "authorizeParams": { "access_type": "offline" }
+        },
+        "importSources": [
+          {
+            "id": "gemini-oauth-creds-file",
+            "kind": "fileJson",
+            "paths": [{ "path": "~/.gemini/oauth_creds.json" }],
+            "json": {
+              "constants": {
+                "type": "oauth",
+                "clientId": "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com",
+                "clientSecret": "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"
+              },
+              "fields": [
+                { "target": "accessToken", "pointer": "/access_token", "normalize": "trim" },
+                { "target": "refreshToken", "pointer": "/refresh_token", "normalize": "trim" },
+                { "target": "idToken", "pointer": "/id_token", "normalize": "trim" },
+                { "target": "expiresAt", "pointer": "/expiry_date", "normalize": "epochSeconds" }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
   "lines": [
     { "type": "progress", "label": "Pro", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Flash", "scope": "overview", "primaryOrder": 2 },

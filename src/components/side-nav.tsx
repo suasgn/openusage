@@ -6,6 +6,7 @@ import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu"
 import {
   DndContext,
   closestCenter,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -14,6 +15,7 @@ import {
 import {
   arrayMove,
   SortableContext,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
@@ -32,7 +34,7 @@ import { useDarkMode } from "@/hooks/use-dark-mode"
 
 type ActiveView = "home" | "settings" | string
 
-type PluginContextAction = "reload" | "remove"
+type PluginContextAction = "reload"
 
 interface NavPlugin {
   id: string
@@ -151,7 +153,10 @@ export function SideNav({
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { delay: 300, tolerance: 5 },
+      activationConstraint: { distance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
     })
   )
 
@@ -182,11 +187,6 @@ export function SideNav({
           enabled: isPluginRefreshAvailable ? isPluginRefreshAvailable(pluginId) : true,
           action: () => onPluginContextAction(pluginId, "reload"),
         })
-        const removeItem = await MenuItem.new({
-          id: `ctx-remove-${pluginId}`,
-          text: "Disable plugin",
-          action: () => onPluginContextAction(pluginId, "remove"),
-        })
         const bottomSeparator = await PredefinedMenuItem.new({ item: "Separator" })
         const inspectItem = await MenuItem.new({
           id: `ctx-inspect-${pluginId}`,
@@ -196,7 +196,7 @@ export function SideNav({
           },
         })
         const menu = await Menu.new({
-          items: [reloadItem, removeItem, bottomSeparator, inspectItem],
+          items: [reloadItem, bottomSeparator, inspectItem],
         })
         try {
           await menu.popup()
@@ -204,7 +204,6 @@ export function SideNav({
           await Promise.allSettled([
             menu.close(),
             reloadItem.close(),
-            removeItem.close(),
             bottomSeparator.close(),
             inspectItem.close(),
           ])
@@ -215,7 +214,7 @@ export function SideNav({
   )
 
   return (
-    <nav className="flex flex-col w-12 border-r bg-muted/50 dark:bg-card py-3">
+    <nav className="flex h-full min-h-0 w-12 flex-col overflow-hidden border-r bg-muted/50 py-3 dark:bg-card">
       {/* Home */}
       <NavButton
         isActive={activeView === "home"}
@@ -226,51 +225,52 @@ export function SideNav({
       </NavButton>
 
       {/* Plugin icons */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext
-          items={plugins.map((p) => p.id)}
-          strategy={verticalListSortingStrategy}
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain py-1">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
         >
-          {plugins.map((plugin) => (
-            <SortableNavPlugin
-              key={plugin.id}
-              plugin={plugin}
-              isActive={activeView === plugin.id}
-              isDark={isDark}
-              onClick={() => onViewChange(plugin.id)}
-              onContextMenu={(e) => handlePluginContextMenu(e, plugin.id)}
-            />
-          ))}
-        </SortableContext>
-      </DndContext>
+          <SortableContext
+            items={plugins.map((p) => p.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            {plugins.map((plugin) => (
+              <SortableNavPlugin
+                key={plugin.id}
+                plugin={plugin}
+                isActive={activeView === plugin.id}
+                isDark={isDark}
+                onClick={() => onViewChange(plugin.id)}
+                onContextMenu={(e) => handlePluginContextMenu(e, plugin.id)}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
+      </div>
 
-      {/* Spacer */}
-      <div className="flex-1" />
+      <div className="mt-auto shrink-0">
+        {/* Help */}
+        <NavButton
+          isActive={false}
+          onClick={() => {
+            openUrl("https://github.com/robinebers/openusage/issues").catch(console.error)
+            invoke("hide_panel").catch(console.error)
+          }}
+          aria-label="Help"
+        >
+          <CircleHelp className="size-6" />
+        </NavButton>
 
-      {/* Help */}
-      <NavButton
-        isActive={false}
-        onClick={() => {
-          openUrl("https://github.com/robinebers/openusage/issues").catch(console.error)
-          invoke("hide_panel").catch(console.error)
-        }}
-        aria-label="Help"
-      >
-        <CircleHelp className="size-6" />
-      </NavButton>
-
-      {/* Settings */}
-      <NavButton
-        isActive={activeView === "settings"}
-        onClick={() => onViewChange("settings")}
-        aria-label="Settings"
-      >
-        <Settings className="size-6" />
-      </NavButton>
+        {/* Settings */}
+        <NavButton
+          isActive={activeView === "settings"}
+          onClick={() => onViewChange("settings")}
+          aria-label="Settings"
+        >
+          <Settings className="size-6" />
+        </NavButton>
+      </div>
     </nav>
   )
 }

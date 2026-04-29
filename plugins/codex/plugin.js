@@ -1,166 +1,66 @@
 (function () {
-  const AUTH_FILE = "auth.json"
-  const CONFIG_AUTH_PATHS = ["~/.config/codex", "~/.codex"]
-  const KEYCHAIN_SERVICE = "Codex Auth"
   const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
   const REFRESH_URL = "https://auth.openai.com/oauth/token"
   const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
   const REFRESH_AGE_MS = 8 * 24 * 60 * 60 * 1000
 
-  function joinPath(base, leaf) {
-    return base.replace(/[\\/]+$/, "") + "/" + leaf
-  }
-
-  function readCodexHome(ctx) {
-    if (!ctx.host.env || typeof ctx.host.env.get !== "function") {
-      return null
+  function extractAccountIdFromClaims(claims) {
+    if (!claims || typeof claims !== "object") return null
+    if (claims.chatgpt_account_id) return claims.chatgpt_account_id
+    const openaiAuth = claims["https://api.openai.com/auth"]
+    if (openaiAuth && openaiAuth.chatgpt_account_id) return openaiAuth.chatgpt_account_id
+    if (Array.isArray(claims.organizations) && claims.organizations.length > 0) {
+      const first = claims.organizations[0]
+      if (first && first.id) return first.id
     }
-
-    try {
-      const value = ctx.host.env.get("CODEX_HOME")
-      if (typeof value !== "string") return null
-      const trimmed = value.trim()
-      return trimmed || null
-    } catch (e) {
-      ctx.host.log.warn("CODEX_HOME read failed: " + String(e))
-      return null
-    }
-  }
-
-  function decodeHexUtf8(hex) {
-    try {
-      const bytes = []
-      for (let i = 0; i < hex.length; i += 2) {
-        bytes.push(parseInt(hex.slice(i, i + 2), 16))
-      }
-
-      if (typeof TextDecoder !== "undefined") {
-        try {
-          return new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes))
-        } catch {}
-      }
-
-      let escaped = ""
-      for (const b of bytes) {
-        const h = b.toString(16)
-        escaped += "%" + (h.length === 1 ? "0" + h : h)
-      }
-      return decodeURIComponent(escaped)
-    } catch {
-      return null
-    }
-  }
-
-  function tryParseAuthJson(ctx, text) {
-    if (!text) return null
-    const parsed = ctx.util.tryParseJson(text)
-    if (parsed) return parsed
-
-    // Some keychain payloads can be returned as hex-encoded UTF-8 bytes.
-    let hex = String(text).trim()
-    if (hex.startsWith("0x") || hex.startsWith("0X")) hex = hex.slice(2)
-    if (!hex || hex.length % 2 !== 0) return null
-    if (!/^[0-9a-fA-F]+$/.test(hex)) return null
-
-    const decoded = decodeHexUtf8(hex)
-    if (!decoded) return null
-    return ctx.util.tryParseJson(decoded)
-  }
-
-  function resolveAuthPaths(ctx) {
-    const codexHome = readCodexHome(ctx)
-
-    // If CODEX_HOME is set, use it
-    if (codexHome) {
-      return [joinPath(codexHome, AUTH_FILE)]
-    }
-
-    return CONFIG_AUTH_PATHS.map((basePath) => joinPath(basePath, AUTH_FILE))
-  }
-
-  function hasTokenLikeAuth(auth) {
-    if (!auth || typeof auth !== "object") return false
-    if (auth.tokens && auth.tokens.access_token) return true
-    if (auth.OPENAI_API_KEY) return true
-    return false
-  }
-
-  function loadAuthFromKeychain(ctx) {
-    if (!ctx.host.keychain || typeof ctx.host.keychain.readGenericPassword !== "function") {
-      return null
-    }
-
-    try {
-      const value = ctx.host.keychain.readGenericPassword(KEYCHAIN_SERVICE)
-      if (!value) return null
-      const auth = tryParseAuthJson(ctx, value)
-      if (!hasTokenLikeAuth(auth)) {
-        ctx.host.log.warn("keychain has data but no codex auth payload")
-        return null
-      }
-      ctx.host.log.info("auth loaded from keychain: " + KEYCHAIN_SERVICE)
-      return { auth, authPath: null, source: "keychain" }
-    } catch (e) {
-      ctx.host.log.info("keychain read failed (may not exist): " + String(e))
-      return null
-    }
-  }
-
-  function saveAuth(ctx, authState) {
-    const auth = authState && authState.auth ? authState.auth : null
-    if (!auth) return false
-
-    if (authState.source === "file" && authState.authPath) {
-      ctx.host.fs.writeText(authState.authPath, JSON.stringify(auth, null, 2))
-      return true
-    }
-
-    if (authState.source === "keychain") {
-      if (!ctx.host.keychain || typeof ctx.host.keychain.writeGenericPassword !== "function") {
-        ctx.host.log.warn("keychain write unsupported in this host")
-        return false
-      }
-      // Use compact JSON to avoid newline-induced keychain encoding issues.
-      ctx.host.keychain.writeGenericPassword(KEYCHAIN_SERVICE, JSON.stringify(auth))
-      return true
-    }
-
-    return false
-  }
-
-  function loadAuth(ctx) {
-    const authPaths = resolveAuthPaths(ctx)
-    for (const authPath of authPaths) {
-      if (!ctx.host.fs.exists(authPath)) continue
-      try {
-        const text = ctx.host.fs.readText(authPath)
-        const auth = tryParseAuthJson(ctx, text)
-        if (!hasTokenLikeAuth(auth)) {
-          ctx.host.log.warn("auth file exists but no valid codex auth payload: " + authPath)
-          continue
-        }
-        ctx.host.log.info("auth loaded from file: " + authPath)
-        return { auth, authPath, source: "file" }
-      } catch (e) {
-        ctx.host.log.warn("auth file read failed: " + String(e))
-      }
-    }
-
-    const keychainAuth = loadAuthFromKeychain(ctx)
-    if (keychainAuth) return keychainAuth
-
-    if (authPaths.length > 0) {
-      for (const authPath of authPaths) {
-        if (!ctx.host.fs.exists(authPath)) {
-          ctx.host.log.warn("auth file not found: " + authPath)
-        }
-      }
-    }
-
     return null
   }
 
+  function extractAccountId(ctx, accessToken, idToken) {
+    if (ctx.jwt && typeof ctx.jwt.decodePayload === "function") {
+      const idClaims = idToken ? ctx.jwt.decodePayload(idToken) : null
+      const idAccount = extractAccountIdFromClaims(idClaims)
+      if (idAccount) return idAccount
+      const accessClaims = accessToken ? ctx.jwt.decodePayload(accessToken) : null
+      return extractAccountIdFromClaims(accessClaims)
+    }
+    return null
+  }
+
+  function loadAccountAuth(ctx) {
+    const creds = ctx.credentials
+    if (!creds || typeof creds !== "object") return null
+    if (creds.accessToken || creds.refreshToken || creds.idToken) {
+      const accountId = creds.accountId || extractAccountId(ctx, creds.accessToken, creds.idToken)
+      return {
+        auth: {
+          last_refresh: creds.lastRefresh || new Date().toISOString(),
+          tokens: {
+            access_token: creds.accessToken || "",
+            refresh_token: creds.refreshToken || "",
+            id_token: creds.idToken || "",
+            account_id: accountId || null,
+            expires_at: creds.expiresAt || null,
+          },
+        },
+        source: "account",
+      }
+    }
+    if (creds.apiKey) {
+      return { auth: { OPENAI_API_KEY: creds.apiKey }, source: "account" }
+    }
+    return null
+  }
+
+  function loadAuth(ctx) {
+    return loadAccountAuth(ctx)
+  }
+
   function needsRefresh(ctx, auth, nowMs) {
+    if (auth.tokens && auth.tokens.expires_at) {
+      const expiresAt = Number(auth.tokens.expires_at) * 1000
+      if (Number.isFinite(expiresAt) && nowMs + 5 * 60 * 1000 >= expiresAt) return true
+    }
     if (!auth.last_refresh) return true
     const lastMs = ctx.util.parseDateMs(auth.last_refresh)
     if (lastMs === null) return true
@@ -224,18 +124,12 @@
       auth.tokens.access_token = newAccessToken
       if (body.refresh_token) auth.tokens.refresh_token = body.refresh_token
       if (body.id_token) auth.tokens.id_token = body.id_token
-      auth.last_refresh = new Date().toISOString()
-
-      try {
-        const saved = saveAuth(ctx, authState)
-        if (saved) {
-          ctx.host.log.info("refresh succeeded, auth persisted to " + authState.source)
-        } else {
-          ctx.host.log.warn("refresh succeeded but auth persistence was not possible")
-        }
-      } catch (e) {
-        ctx.host.log.warn("refresh succeeded but failed to save auth: " + String(e))
+      if (typeof body.expires_in === "number") {
+        auth.tokens.expires_at = Math.floor(Date.now() / 1000) + Math.max(1, body.expires_in)
       }
+      const accountId = extractAccountId(ctx, auth.tokens.access_token, auth.tokens.id_token)
+      if (accountId) auth.tokens.account_id = accountId
+      auth.last_refresh = new Date().toISOString()
 
       return newAccessToken
     } catch (e) {
@@ -308,10 +202,6 @@
     const d = since.getDate()
     const sinceStr = "" + y + (m < 10 ? "0" : "") + m + (d < 10 ? "0" : "") + d
     const queryOpts = { provider: "codex", since: sinceStr }
-    const codexHome = readCodexHome(ctx)
-    if (codexHome) {
-      queryOpts.homePath = codexHome
-    }
 
     const result = ctx.host.ccusage.query(queryOpts)
     if (!result || typeof result !== "object" || typeof result.status !== "string") {
@@ -433,13 +323,14 @@
     if (auth.tokens && auth.tokens.access_token) {
       const nowMs = Date.now()
       let accessToken = auth.tokens.access_token
-      const accountId = auth.tokens.account_id
+      let accountId = auth.tokens.account_id
 
       if (needsRefresh(ctx, auth, nowMs)) {
         ctx.host.log.info("token needs refresh (age > " + (REFRESH_AGE_MS / 1000 / 60 / 60 / 24) + " days)")
         const refreshed = refreshToken(ctx, authState)
         if (refreshed) {
           accessToken = refreshed
+          accountId = auth.tokens.account_id
         } else {
           ctx.host.log.warn("proactive refresh failed, trying with existing token")
         }
@@ -463,7 +354,9 @@
           refresh: () => {
             ctx.host.log.info("usage returned 401, attempting refresh")
             didRefresh = true
-            return refreshToken(ctx, authState)
+            const refreshed = refreshToken(ctx, authState)
+            accountId = auth.tokens.account_id
+            return refreshed
           },
         })
       } catch (e) {
@@ -672,7 +565,17 @@
         lines.push(ctx.line.badge({ label: "Status", text: "No usage data", color: "#a3a3a3" }))
       }
 
-      return { plan: plan, lines: lines }
+      const result = { plan: plan, lines: lines }
+      result.updatedCredentialsJson = JSON.stringify({
+        type: "oauth",
+        accessToken: auth.tokens.access_token || "",
+        refreshToken: auth.tokens.refresh_token || "",
+        idToken: auth.tokens.id_token || "",
+        accountId: auth.tokens.account_id || null,
+        expiresAt: auth.tokens.expires_at || null,
+        lastRefresh: auth.last_refresh || new Date().toISOString(),
+      })
+      return result
     }
 
     if (auth.OPENAI_API_KEY) {

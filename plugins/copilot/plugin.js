@@ -1,101 +1,17 @@
 (function () {
-  const KEYCHAIN_SERVICE = "OpenUsage-copilot";
-  const GH_KEYCHAIN_SERVICE = "gh:github.com";
   const USAGE_URL = "https://api.github.com/copilot_internal/user";
 
-  function readJson(ctx, path) {
-    try {
-      if (!ctx.host.fs.exists(path)) return null;
-      const text = ctx.host.fs.readText(path);
-      return ctx.util.tryParseJson(text);
-    } catch (e) {
-      ctx.host.log.warn("readJson failed for " + path + ": " + String(e));
-      return null;
-    }
-  }
-
-  function writeJson(ctx, path, value) {
-    try {
-      ctx.host.fs.writeText(path, JSON.stringify(value));
-    } catch (e) {
-      ctx.host.log.warn("writeJson failed for " + path + ": " + String(e));
-    }
-  }
-
-  function saveToken(ctx, token) {
-    try {
-      ctx.host.keychain.writeGenericPassword(
-        KEYCHAIN_SERVICE,
-        JSON.stringify({ token: token }),
-      );
-    } catch (e) {
-      ctx.host.log.warn("keychain write failed: " + String(e));
-    }
-    writeJson(ctx, ctx.app.pluginDataDir + "/auth.json", { token: token });
-  }
-
-  function clearCachedToken(ctx) {
-    try {
-      ctx.host.keychain.deleteGenericPassword(KEYCHAIN_SERVICE);
-    } catch (e) {
-      ctx.host.log.info("keychain delete failed: " + String(e));
-    }
-    writeJson(ctx, ctx.app.pluginDataDir + "/auth.json", null);
-  }
-
-  function loadTokenFromKeychain(ctx) {
-    try {
-      const raw = ctx.host.keychain.readGenericPassword(KEYCHAIN_SERVICE);
-      if (raw) {
-        const parsed = ctx.util.tryParseJson(raw);
-        if (parsed && parsed.token) {
-          ctx.host.log.info("token loaded from OpenUsage keychain");
-          return { token: parsed.token, source: "keychain" };
-        }
-      }
-    } catch (e) {
-      ctx.host.log.info("OpenUsage keychain read failed: " + String(e));
-    }
-    return null;
-  }
-
-  function loadTokenFromGhCli(ctx) {
-    try {
-      const raw = ctx.host.keychain.readGenericPassword(GH_KEYCHAIN_SERVICE);
-      if (raw) {
-        let token = raw;
-        if (
-          typeof token === "string" &&
-          token.indexOf("go-keyring-base64:") === 0
-        ) {
-          token = ctx.base64.decode(token.slice("go-keyring-base64:".length));
-        }
-        if (token) {
-          ctx.host.log.info("token loaded from gh CLI keychain");
-          return { token: token, source: "gh-cli" };
-        }
-      }
-    } catch (e) {
-      ctx.host.log.info("gh CLI keychain read failed: " + String(e));
-    }
-    return null;
-  }
-
-  function loadTokenFromStateFile(ctx) {
-    const data = readJson(ctx, ctx.app.pluginDataDir + "/auth.json");
-    if (data && data.token) {
-      ctx.host.log.info("token loaded from state file");
-      return { token: data.token, source: "state" };
-    }
-    return null;
+  function loadTokenFromAccount(ctx) {
+    const creds = ctx.credentials;
+    if (!creds || typeof creds !== "object" || typeof creds.accessToken !== "string") return null;
+    const token = creds.accessToken.trim();
+    if (!token) return null;
+    ctx.host.log.info("token loaded from account credentials");
+    return { token: token, source: "account" };
   }
 
   function loadToken(ctx) {
-    return (
-      loadTokenFromKeychain(ctx) ||
-      loadTokenFromGhCli(ctx) ||
-      loadTokenFromStateFile(ctx)
-    );
+    return loadTokenFromAccount(ctx);
   }
 
   function fetchUsage(ctx, token) {
@@ -146,11 +62,10 @@
   function probe(ctx) {
     const cred = loadToken(ctx);
     if (!cred) {
-      throw "Not logged in. Run `gh auth login` first.";
+      throw "Copilot token missing. Add a Copilot account in Settings.";
     }
 
     let token = cred.token;
-    let source = cred.source;
 
     let resp;
     try {
@@ -161,30 +76,7 @@
     }
 
     if (resp.status === 401 || resp.status === 403) {
-      // If cached token is stale, clear it and try fallback sources
-      if (source === "keychain") {
-        ctx.host.log.info("cached token invalid, trying fallback sources");
-        clearCachedToken(ctx);
-        const fallback = loadTokenFromGhCli(ctx);
-        if (fallback) {
-          try {
-            resp = fetchUsage(ctx, fallback.token);
-          } catch (e) {
-            ctx.host.log.error("fallback usage request exception: " + String(e));
-            throw "Usage request failed. Check your connection.";
-          }
-          if (resp.status >= 200 && resp.status < 300) {
-            // Fallback worked, persist the new token
-            saveToken(ctx, fallback.token);
-            token = fallback.token;
-            source = fallback.source;
-          }
-        }
-      }
-      // Still failing after retry
-      if (resp.status === 401 || resp.status === 403) {
-        throw "Token invalid. Run `gh auth login` to re-authenticate.";
-      }
+      throw "Token invalid. Reconnect your Copilot account in Settings.";
     }
 
     if (resp.status < 200 || resp.status >= 300) {
@@ -194,11 +86,6 @@
         String(resp.status) +
         "). Try again later."
       );
-    }
-
-    // Persist gh-cli token to OpenUsage keychain for future use
-    if (source === "gh-cli") {
-      saveToken(ctx, token);
     }
 
     const data = ctx.util.tryParseJson(resp.bodyText);

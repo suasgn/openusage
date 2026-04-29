@@ -8,6 +8,7 @@ import { useAppVersion } from "@/hooks/app/use-app-version"
 import { usePanel } from "@/hooks/app/use-panel"
 import { useAppUpdate } from "@/hooks/use-app-update"
 import { useAppUiStore } from "@/stores/app-ui-store"
+import type { AccountOrderByPlugin } from "@/lib/settings"
 
 const ARROW_OVERHEAD_PX = 37
 
@@ -18,6 +19,7 @@ type AppShellProps = {
   settingsPlugins: SettingsPluginState[]
   autoUpdateNextAt: number | null
   selectedPlugin: DisplayPluginState | null
+  accountOrderByPlugin?: AccountOrderByPlugin
   onPluginContextAction: (pluginId: string, action: PluginContextAction) => void
   isPluginRefreshAvailable: (pluginId: string) => boolean
   onNavReorder: (orderedIds: string[]) => void
@@ -31,6 +33,7 @@ export function AppShell({
   settingsPlugins,
   autoUpdateNextAt,
   selectedPlugin,
+  accountOrderByPlugin,
   onPluginContextAction,
   isPluginRefreshAvailable,
   onNavReorder,
@@ -65,6 +68,7 @@ export function AppShell({
 
   const appVersion = useAppVersion()
   const { updateStatus, triggerInstall, checkForUpdates } = useAppUpdate()
+  const panelHeightPx = maxPanelHeightPx ? Math.max(1, maxPanelHeightPx - ARROW_OVERHEAD_PX) : undefined
 
   return (
     <div
@@ -75,7 +79,7 @@ export function AppShell({
       <div className="tray-arrow" />
       <div
         className="relative bg-card rounded-xl overflow-hidden select-none w-full border shadow-lg flex flex-col"
-        style={maxPanelHeightPx ? { maxHeight: `${maxPanelHeightPx - ARROW_OVERHEAD_PX}px` } : undefined}
+        style={panelHeightPx ? { height: `${panelHeightPx}px`, maxHeight: `${panelHeightPx}px` } : undefined}
       >
         <div className="flex flex-1 min-h-0 flex-row">
           <SideNav
@@ -94,6 +98,7 @@ export function AppShell({
                   displayPlugins={displayPlugins}
                   settingsPlugins={settingsPlugins}
                   selectedPlugin={selectedPlugin}
+                  accountOrderByPlugin={accountOrderByPlugin}
                 />
               </div>
               <div

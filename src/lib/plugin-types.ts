@@ -29,7 +29,7 @@ export type PluginLink = {
 }
 
 export type PluginOutput = {
-  providerId: string
+  pluginId: string
   displayName: string
   plan?: string
   lines: MetricLine[]
@@ -43,8 +43,32 @@ export type PluginMeta = {
   brandColor?: string
   lines: ManifestLine[]
   links?: PluginLink[]
+  auth?: PluginAuth
   /** Ordered list of primary metric candidates. Frontend picks first available. */
   primaryCandidates: string[]
+}
+
+export type AuthStrategyKind = "apiKey" | "json" | "oauthPkce" | "deviceCode" | "browserCookie"
+
+export type AuthCredentialField = {
+  name: string
+  label: string
+  secret?: boolean
+  required?: boolean
+  placeholder?: string | null
+}
+
+export type AuthStrategy = {
+  id: string
+  label: string
+  kind: AuthStrategyKind
+  fields: AuthCredentialField[]
+  credentialTemplate?: unknown
+}
+
+export type PluginAuth = {
+  defaultStrategyId?: string | null
+  strategies: AuthStrategy[]
 }
 
 export type PluginDisplayState = {

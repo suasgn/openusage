@@ -3,13 +3,8 @@ import type { ReactNode } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-let latestOnDragEnd: ((event: any) => void) | undefined
-
 vi.mock("@dnd-kit/core", () => ({
-  DndContext: ({ children, onDragEnd }: { children: ReactNode; onDragEnd?: (event: any) => void }) => {
-    latestOnDragEnd = onDragEnd
-    return <div data-testid="dnd-context">{children}</div>
-  },
+  DndContext: ({ children }: { children: ReactNode }) => <div data-testid="dnd-context">{children}</div>,
   closestCenter: vi.fn(),
   PointerSensor: class {},
   KeyboardSensor: class {},
@@ -45,8 +40,8 @@ import { SettingsPage } from "@/pages/settings"
 
 const defaultProps = {
   plugins: [{ id: "a", name: "Alpha", enabled: true }],
-  onReorder: vi.fn(),
-  onToggle: vi.fn(),
+  onAccountChanged: vi.fn(),
+  onPluginEnabledChange: vi.fn(),
   autoUpdateInterval: 15 as const,
   onAutoUpdateIntervalChange: vi.fn(),
   themeMode: "system" as const,
@@ -74,49 +69,63 @@ afterEach(() => {
 })
 
 describe("SettingsPage", () => {
-  it("toggles plugins", async () => {
-    const onToggle = vi.fn()
-    render(
-      <SettingsPage
-        {...defaultProps}
-        plugins={[
-          { id: "b", name: "Beta", enabled: false },
-        ]}
-        onToggle={onToggle}
-      />
-    )
-    const checkboxes = screen.getAllByRole("checkbox")
-    await userEvent.click(checkboxes[checkboxes.length - 1])
-    expect(onToggle).toHaveBeenCalledWith("b")
+  it("does not render the removed plugins settings section", () => {
+    render(<SettingsPage {...defaultProps} />)
+
+    expect(screen.queryByText("Plugins")).not.toBeInTheDocument()
   })
 
-  it("reorders plugins on drag end", () => {
-    const onReorder = vi.fn()
+  it("renders all plugins in accounts", () => {
     render(
       <SettingsPage
         {...defaultProps}
         plugins={[
           { id: "a", name: "Alpha", enabled: true },
-          { id: "b", name: "Beta", enabled: true },
+          { id: "b", name: "Beta", enabled: false },
         ]}
-        onReorder={onReorder}
       />
     )
-    latestOnDragEnd?.({ active: { id: "a" }, over: { id: "b" } })
-    expect(onReorder).toHaveBeenCalledWith(["b", "a"])
+
+    expect(screen.getByText("Accounts")).toBeInTheDocument()
+    expect(screen.getByText("Alpha")).toBeInTheDocument()
+    expect(screen.getByText("Beta")).toBeInTheDocument()
+    expect(screen.getAllByText("No account required.")).toHaveLength(2)
   })
 
-  it("ignores invalid drag end", () => {
-    const onReorder = vi.fn()
+  it("renders account controls for auth plugins", () => {
     render(
       <SettingsPage
         {...defaultProps}
-        onReorder={onReorder}
+        plugins={[
+          {
+            id: "a",
+            name: "Alpha",
+            enabled: true,
+            auth: {
+              defaultStrategyId: "api-key",
+              strategies: [{ id: "api-key", label: "API Key", kind: "apiKey", fields: [] }],
+            },
+          },
+        ]}
       />
     )
-    latestOnDragEnd?.({ active: { id: "a" }, over: null })
-    latestOnDragEnd?.({ active: { id: "a" }, over: { id: "a" } })
-    expect(onReorder).not.toHaveBeenCalled()
+
+    expect(screen.getByText("Accounts")).toBeInTheDocument()
+    expect(screen.getByText("Alpha")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Add/ })).toBeInTheDocument()
+  })
+
+  it("toggles plugin enabled state from accounts", async () => {
+    const onPluginEnabledChange = vi.fn()
+    render(
+      <SettingsPage
+        {...defaultProps}
+        onPluginEnabledChange={onPluginEnabledChange}
+      />
+    )
+
+    await userEvent.click(screen.getAllByText("Enabled")[0])
+    expect(onPluginEnabledChange).toHaveBeenCalledWith("a", false)
   })
 
   it("updates auto-update interval", async () => {

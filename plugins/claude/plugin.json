@@ -6,6 +6,81 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#DE7356",
+  "auth": {
+    "defaultStrategyId": "oauth",
+    "strategies": [
+      {
+        "id": "oauth",
+        "label": "OAuth",
+        "kind": "oauthPkce",
+        "importSources": [
+          {
+            "id": "env-oauth-token",
+            "kind": "env",
+            "env": "CLAUDE_CODE_OAUTH_TOKEN",
+            "text": {
+              "target": "accessToken",
+              "constants": { "type": "oauth", "inferenceOnly": true }
+            }
+          },
+          {
+            "id": "credentials-file",
+            "kind": "fileJson",
+            "paths": [
+              { "env": "CLAUDE_CONFIG_DIR", "suffix": "/.credentials.json" },
+              { "path": "~/.claude/.credentials.json" }
+            ],
+            "json": {
+              "constants": { "type": "oauth" },
+              "fields": [
+                { "target": "accessToken", "pointers": ["/claudeAiOauth/accessToken", "/claudeAiOauth/access_token"], "required": true, "normalize": "trim" },
+                { "target": "refreshToken", "pointers": ["/claudeAiOauth/refreshToken", "/claudeAiOauth/refresh_token"], "normalize": "trim" },
+                { "target": "expiresAt", "pointers": ["/claudeAiOauth/expiresAt", "/claudeAiOauth/expires_at"], "normalize": "epochSeconds" },
+                { "target": "scope", "pointers": ["/claudeAiOauth/scopes", "/claudeAiOauth/scope"], "join": " " },
+                { "target": "subscriptionType", "pointers": ["/claudeAiOauth/subscriptionType", "/claudeAiOauth/subscription_type"], "normalize": "trim" },
+                { "target": "rateLimitTier", "pointers": ["/claudeAiOauth/rateLimitTier", "/claudeAiOauth/rate_limit_tier"], "normalize": "trim" }
+              ]
+            }
+          },
+          {
+            "id": "keychain",
+            "kind": "keychainJson",
+            "services": [
+              { "service": "Claude Code-credentials", "currentUser": true },
+              { "service": "Claude Code-local-oauth-credentials", "currentUser": true },
+              { "service": "Claude Code-staging-oauth-credentials", "currentUser": true },
+              { "service": "Claude Code-custom-oauth-credentials", "currentUser": true },
+              { "service": "Claude Code-credentials" },
+              { "service": "Claude Code-local-oauth-credentials" },
+              { "service": "Claude Code-staging-oauth-credentials" },
+              { "service": "Claude Code-custom-oauth-credentials" }
+            ],
+            "json": {
+              "constants": { "type": "oauth" },
+              "fields": [
+                { "target": "accessToken", "pointers": ["/claudeAiOauth/accessToken", "/claudeAiOauth/access_token"], "required": true, "normalize": "trim" },
+                { "target": "refreshToken", "pointers": ["/claudeAiOauth/refreshToken", "/claudeAiOauth/refresh_token"], "normalize": "trim" },
+                { "target": "expiresAt", "pointers": ["/claudeAiOauth/expiresAt", "/claudeAiOauth/expires_at"], "normalize": "epochSeconds" },
+                { "target": "scope", "pointers": ["/claudeAiOauth/scopes", "/claudeAiOauth/scope"], "join": " " },
+                { "target": "subscriptionType", "pointers": ["/claudeAiOauth/subscriptionType", "/claudeAiOauth/subscription_type"], "normalize": "trim" },
+                { "target": "rateLimitTier", "pointers": ["/claudeAiOauth/rateLimitTier", "/claudeAiOauth/rate_limit_tier"], "normalize": "trim" }
+              ]
+            }
+          }
+        ],
+        "oauth": {
+          "authorizeUrl": "https://claude.ai/oauth/authorize",
+          "tokenUrl": "https://console.anthropic.com/v1/oauth/token",
+          "clientId": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
+          "scopes": ["org:create_api_key", "user:profile", "user:inference", "user:sessions:claude_code", "user:mcp_servers", "user:file_upload"],
+          "callbackPath": "/callback",
+          "tokenRequest": "json",
+          "includeStateInTokenRequest": true,
+          "authorizeParams": { "code": "true" }
+        }
+      }
+    ]
+  },
   "links": [
     { "label": "Status", "url": "https://status.anthropic.com/" },
     { "label": "Console", "url": "https://console.anthropic.com/" }

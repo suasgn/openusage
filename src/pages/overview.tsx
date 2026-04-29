@@ -1,9 +1,10 @@
 import { ProviderCard } from "@/components/provider-card"
 import type { PluginDisplayState } from "@/lib/plugin-types"
-import type { DisplayMode, ResetTimerDisplayMode } from "@/lib/settings"
+import type { AccountOrderByPlugin, DisplayMode, ResetTimerDisplayMode } from "@/lib/settings"
 
 interface OverviewPageProps {
   plugins: PluginDisplayState[]
+  accountOrderByPlugin?: AccountOrderByPlugin
   onRetryPlugin?: (pluginId: string) => void
   displayMode: DisplayMode
   resetTimerDisplayMode: ResetTimerDisplayMode
@@ -12,6 +13,7 @@ interface OverviewPageProps {
 
 export function OverviewPage({
   plugins,
+  accountOrderByPlugin,
   onRetryPlugin,
   displayMode,
   resetTimerDisplayMode,
@@ -37,6 +39,7 @@ export function OverviewPage({
           error={plugin.error}
           lines={plugin.data?.lines ?? []}
           skeletonLines={plugin.meta.lines}
+          accountOrder={accountOrderByPlugin?.[plugin.meta.id] ?? []}
           lastManualRefreshAt={plugin.lastManualRefreshAt}
           onRetry={onRetryPlugin ? () => onRetryPlugin(plugin.meta.id) : undefined}
           scopeFilter="overview"

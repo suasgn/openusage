@@ -6,6 +6,31 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#F34E3F",
+  "auth": {
+    "defaultStrategyId": "apiKey",
+    "strategies": [
+      {
+        "id": "apiKey",
+        "label": "API Key",
+        "kind": "apiKey",
+        "fields": [{ "name": "apiKey", "label": "API Key", "secret": true, "required": true }],
+        "credentialTemplate": { "apiKey": "" },
+        "importSources": [
+          {
+            "id": "amp-secrets-file",
+            "kind": "fileJson",
+            "paths": [{ "path": "~/.local/share/amp/secrets.json" }],
+            "json": {
+              "constants": { "type": "apiKey" },
+              "fields": [
+                { "target": "apiKey", "pointer": "/apiKey@https:~1~1ampcode.com~1", "required": true, "normalize": "trim" }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
   "lines": [
     { "type": "progress", "label": "Free", "scope": "overview", "primaryOrder": 1 },
     { "type": "text", "label": "Bonus", "scope": "detail" },

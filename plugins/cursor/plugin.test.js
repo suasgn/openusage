@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { makeCtx } from "../test-helpers.js"
+import { makeCtx as makeBaseCtx } from "../test-helpers.js"
 
 const loadPlugin = async () => {
   await import("./plugin.js")
@@ -13,6 +13,22 @@ function makeJwt(payload) {
   return `a.${jwtPayload}.c`
 }
 
+function setCursorCredentials(ctx, opts = {}) {
+  const hasAccessToken = Object.prototype.hasOwnProperty.call(opts, "accessToken")
+  const hasRefreshToken = Object.prototype.hasOwnProperty.call(opts, "refreshToken")
+  ctx.credentials = {
+    type: "oauth",
+    accessToken: hasAccessToken ? opts.accessToken : makeJwt({ sub: "google-oauth2|user_abc123", exp: 9999999999 }),
+    refreshToken: hasRefreshToken ? opts.refreshToken : "refresh-token",
+  }
+}
+
+function makeCtx() {
+  const ctx = makeBaseCtx()
+  setCursorCredentials(ctx)
+  return ctx
+}
+
 describe("cursor plugin", () => {
   beforeEach(() => {
     delete globalThis.__openusage_plugin
@@ -21,18 +37,18 @@ describe("cursor plugin", () => {
 
   it("throws when no token", async () => {
     const ctx = makeCtx()
-    ctx.host.sqlite.query.mockReturnValue(JSON.stringify([]))
+    ctx.credentials = null
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
   })
 
-  it("loads tokens from keychain when sqlite has none", async () => {
+  it("uses account credentials without reading local auth stores", async () => {
     const ctx = makeCtx()
-    ctx.host.sqlite.query.mockReturnValue(JSON.stringify([]))
-    ctx.host.keychain.readGenericPassword.mockImplementation((service) => {
-      if (service === "cursor-access-token") return "keychain-access-token"
-      if (service === "cursor-refresh-token") return "keychain-refresh-token"
-      return null
+    ctx.host.sqlite.query.mockImplementation(() => {
+      throw new Error("sqlite should not be read")
+    })
+    ctx.host.keychain.readGenericPassword.mockImplementation(() => {
+      throw new Error("keychain should not be read")
     })
     ctx.host.http.request.mockReturnValue({
       status: 200,
@@ -46,11 +62,11 @@ describe("cursor plugin", () => {
     const result = plugin.probe(ctx)
 
     expect(result.lines.find((line) => line.label === "Total usage")).toBeTruthy()
-    expect(ctx.host.keychain.readGenericPassword).toHaveBeenCalledWith("cursor-access-token")
-    expect(ctx.host.keychain.readGenericPassword).toHaveBeenCalledWith("cursor-refresh-token")
+    expect(ctx.host.sqlite.query).not.toHaveBeenCalled()
+    expect(ctx.host.keychain.readGenericPassword).not.toHaveBeenCalled()
   })
 
-  it("refreshes keychain access token and persists to keychain source", async () => {
+  it("refreshes expired account access token and returns updated credentials", async () => {
     const ctx = makeCtx()
     const expiredPayload = Buffer.from(JSON.stringify({ exp: 1 }), "utf8")
       .toString("base64")
@@ -61,12 +77,7 @@ describe("cursor plugin", () => {
       .replace(/=+$/g, "")
     const refreshedAccessToken = `a.${freshPayload}.c`
 
-    ctx.host.sqlite.query.mockReturnValue(JSON.stringify([]))
-    ctx.host.keychain.readGenericPassword.mockImplementation((service) => {
-      if (service === "cursor-access-token") return expiredAccessToken
-      if (service === "cursor-refresh-token") return "keychain-refresh-token"
-      return null
-    })
+    setCursorCredentials(ctx, { accessToken: expiredAccessToken, refreshToken: "account-refresh-token" })
     ctx.host.http.request.mockImplementation((opts) => {
       if (String(opts.url).includes("/oauth/token")) {
         return {
@@ -87,38 +98,20 @@ describe("cursor plugin", () => {
     const result = plugin.probe(ctx)
 
     expect(result.lines.find((line) => line.label === "Total usage")).toBeTruthy()
-    expect(ctx.host.keychain.writeGenericPassword).toHaveBeenCalledWith(
-      "cursor-access-token",
-      refreshedAccessToken
-    )
+    const updated = JSON.parse(result.updatedCredentialsJson)
+    expect(updated.accessToken).toBe(refreshedAccessToken)
+    expect(updated.refreshToken).toBe("account-refresh-token")
+    expect(ctx.host.keychain.writeGenericPassword).not.toHaveBeenCalled()
     expect(ctx.host.sqlite.exec).not.toHaveBeenCalled()
   })
 
-  it("prefers sqlite tokens when sqlite and keychain both have tokens", async () => {
+  it("uses the selected account token", async () => {
     const ctx = makeCtx()
     const sqlitePayload = Buffer.from(JSON.stringify({ exp: 9999999999 }), "utf8")
       .toString("base64")
       .replace(/=+$/g, "")
     const sqliteToken = `a.${sqlitePayload}.c`
-    const keychainPayload = Buffer.from(JSON.stringify({ exp: 9999999999, sub: "keychain" }), "utf8")
-      .toString("base64")
-      .replace(/=+$/g, "")
-    const keychainToken = `a.${keychainPayload}.c`
-
-    ctx.host.sqlite.query.mockImplementation((db, sql) => {
-      if (String(sql).includes("cursorAuth/accessToken")) {
-        return JSON.stringify([{ value: sqliteToken }])
-      }
-      if (String(sql).includes("cursorAuth/refreshToken")) {
-        return JSON.stringify([{ value: "sqlite-refresh-token" }])
-      }
-      return JSON.stringify([])
-    })
-    ctx.host.keychain.readGenericPassword.mockImplementation((service) => {
-      if (service === "cursor-access-token") return keychainToken
-      if (service === "cursor-refresh-token") return "keychain-refresh-token"
-      return null
-    })
+    setCursorCredentials(ctx, { accessToken: sqliteToken, refreshToken: "sqlite-refresh-token" })
     ctx.host.http.request.mockImplementation((opts) => {
       if (String(opts.url).includes("GetCurrentPeriodUsage")) {
         expect(opts.headers.Authorization).toBe("Bearer " + sqliteToken)
@@ -136,20 +129,10 @@ describe("cursor plugin", () => {
     const result = plugin.probe(ctx)
 
     expect(result.lines.find((line) => line.label === "Total usage")).toBeTruthy()
-    expect(ctx.host.keychain.readGenericPassword).toHaveBeenCalledWith("cursor-access-token")
-    expect(ctx.host.keychain.readGenericPassword).toHaveBeenCalledWith("cursor-refresh-token")
   })
 
-  it("prefers keychain when sqlite looks free and token subjects differ", async () => {
+  it("uses account credentials imported from keychain", async () => {
     const ctx = makeCtx()
-    const sqlitePayload = Buffer.from(
-      JSON.stringify({ exp: 9999999999, sub: "google-oauth2|sqlite-user" }),
-      "utf8"
-    )
-      .toString("base64")
-      .replace(/=+$/g, "")
-    const sqliteToken = `a.${sqlitePayload}.c`
-
     const keychainPayload = Buffer.from(
       JSON.stringify({ exp: 9999999999, sub: "auth0|keychain-user" }),
       "utf8"
@@ -158,23 +141,7 @@ describe("cursor plugin", () => {
       .replace(/=+$/g, "")
     const keychainToken = `a.${keychainPayload}.c`
 
-    ctx.host.sqlite.query.mockImplementation((db, sql) => {
-      if (String(sql).includes("cursorAuth/accessToken")) {
-        return JSON.stringify([{ value: sqliteToken }])
-      }
-      if (String(sql).includes("cursorAuth/refreshToken")) {
-        return JSON.stringify([{ value: "sqlite-refresh-token" }])
-      }
-      if (String(sql).includes("cursorAuth/stripeMembershipType")) {
-        return JSON.stringify([{ value: "free" }])
-      }
-      return JSON.stringify([])
-    })
-    ctx.host.keychain.readGenericPassword.mockImplementation((service) => {
-      if (service === "cursor-access-token") return keychainToken
-      if (service === "cursor-refresh-token") return "keychain-refresh-token"
-      return null
-    })
+    setCursorCredentials(ctx, { accessToken: keychainToken, refreshToken: "keychain-refresh-token" })
     ctx.host.http.request.mockImplementation((opts) => {
       if (String(opts.url).includes("GetCurrentPeriodUsage")) {
         expect(opts.headers.Authorization).toBe("Bearer " + keychainToken)
@@ -193,14 +160,11 @@ describe("cursor plugin", () => {
     expect(result.lines.find((line) => line.label === "Total usage")).toBeTruthy()
   })
 
-  it("throws on sqlite errors when reading token", async () => {
+  it("throws when account credentials contain no tokens", async () => {
     const ctx = makeCtx()
-    ctx.host.sqlite.query.mockImplementation(() => {
-      throw new Error("boom")
-    })
+    ctx.credentials = { type: "oauth" }
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
-    expect(ctx.host.log.warn).toHaveBeenCalled()
   })
 
   it("throws on disabled usage", async () => {
@@ -1267,23 +1231,14 @@ describe("cursor plugin", () => {
     expect(totalLine.used).toBe(12)
   })
 
-  it("refreshes token when expired and persists new access token", async () => {
+  it("refreshes token when expired and returns updated credentials", async () => {
     const ctx = makeCtx()
 
     const expiredPayload = Buffer.from(JSON.stringify({ exp: 1 }), "utf8")
       .toString("base64")
       .replace(/=+$/g, "")
     const accessToken = `a.${expiredPayload}.c`
-
-    ctx.host.sqlite.query.mockImplementation((db, sql) => {
-      if (String(sql).includes("cursorAuth/accessToken")) {
-        return JSON.stringify([{ value: accessToken }])
-      }
-      if (String(sql).includes("cursorAuth/refreshToken")) {
-        return JSON.stringify([{ value: "refresh" }])
-      }
-      return JSON.stringify([])
-    })
+    setCursorCredentials(ctx, { accessToken, refreshToken: "refresh" })
 
     const newPayload = Buffer.from(JSON.stringify({ exp: 9999999999 }), "utf8")
       .toString("base64")
@@ -1303,20 +1258,15 @@ describe("cursor plugin", () => {
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
     expect(result.lines.find((line) => line.label === "Total usage")).toBeTruthy()
-    expect(ctx.host.sqlite.exec).toHaveBeenCalled()
+    const updated = JSON.parse(result.updatedCredentialsJson)
+    expect(updated.accessToken).toBe(newToken)
+    expect(updated.refreshToken).toBe("refresh")
+    expect(ctx.host.sqlite.exec).not.toHaveBeenCalled()
   })
 
   it("throws session expired when refresh requires logout and no access token exists", async () => {
     const ctx = makeCtx()
-    ctx.host.sqlite.query.mockImplementation((db, sql) => {
-      if (String(sql).includes("cursorAuth/accessToken")) {
-        return JSON.stringify([])
-      }
-      if (String(sql).includes("cursorAuth/refreshToken")) {
-        return JSON.stringify([{ value: "refresh" }])
-      }
-      return JSON.stringify([])
-    })
+    setCursorCredentials(ctx, { accessToken: "", refreshToken: "refresh" })
     ctx.host.http.request.mockImplementation((opts) => {
       if (String(opts.url).includes("/oauth/token")) {
         return { status: 200, bodyText: JSON.stringify({ shouldLogout: true }) }
@@ -1335,16 +1285,7 @@ describe("cursor plugin", () => {
       .toString("base64")
       .replace(/=+$/g, "")
     const accessToken = `a.${payload}.c`
-
-    ctx.host.sqlite.query.mockImplementation((db, sql) => {
-      if (String(sql).includes("cursorAuth/accessToken")) {
-        return JSON.stringify([{ value: accessToken }])
-      }
-      if (String(sql).includes("cursorAuth/refreshToken")) {
-        return JSON.stringify([{ value: "refresh" }])
-      }
-      return JSON.stringify([])
-    })
+    setCursorCredentials(ctx, { accessToken, refreshToken: "refresh" })
 
     ctx.host.http.request.mockImplementation((opts) => {
       if (String(opts.url).includes("/oauth/token")) {
@@ -1361,15 +1302,11 @@ describe("cursor plugin", () => {
     expect(() => plugin.probe(ctx)).not.toThrow()
   })
 
-  it("handles invalid sqlite JSON for access token when refresh token is available", async () => {
+  it("refreshes when only an account refresh token is available", async () => {
     const ctx = makeCtx()
     const refreshedToken = makeJwt({ sub: "google-oauth2|user_abc123", exp: 9999999999 })
 
-    ctx.host.sqlite.query.mockImplementation((db, sql) => {
-      if (String(sql).includes("cursorAuth/accessToken")) return "{}"
-      if (String(sql).includes("cursorAuth/refreshToken")) return JSON.stringify([{ value: "refresh" }])
-      return JSON.stringify([])
-    })
+    setCursorCredentials(ctx, { accessToken: "", refreshToken: "refresh" })
     ctx.host.http.request.mockImplementation((opts) => {
       if (String(opts.url).includes("/oauth/token")) {
         return { status: 200, bodyText: JSON.stringify({ access_token: refreshedToken }) }
@@ -1387,11 +1324,7 @@ describe("cursor plugin", () => {
 
   it("throws not logged in when only refresh token exists but refresh returns no access token", async () => {
     const ctx = makeCtx()
-    ctx.host.sqlite.query.mockImplementation((db, sql) => {
-      if (String(sql).includes("cursorAuth/accessToken")) return JSON.stringify([])
-      if (String(sql).includes("cursorAuth/refreshToken")) return JSON.stringify([{ value: "refresh" }])
-      return JSON.stringify([])
-    })
+    setCursorCredentials(ctx, { accessToken: "", refreshToken: "refresh" })
     ctx.host.http.request.mockImplementation((opts) => {
       if (String(opts.url).includes("/oauth/token")) {
         return { status: 200, bodyText: JSON.stringify({}) }

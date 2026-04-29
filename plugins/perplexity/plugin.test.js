@@ -36,18 +36,8 @@ function makeRequestHexWithSessionFields(token, userAgent, deviceId) {
 }
 
 function mockCacheSession(ctx, options = {}) {
-  const selectedDbPath = options.dbPath || PRIMARY_CACHE_DB_PATH
   const requestHex = options.requestHex || null
-
-  const originalExists = ctx.host.fs.exists
-  ctx.host.fs.exists = (path) => path === selectedDbPath || originalExists(path)
-
-  ctx.host.sqlite.query.mockImplementation((dbPath, sql) => {
-    if (dbPath === selectedDbPath && String(sql).includes("https://www.perplexity.ai/api/user")) {
-      return JSON.stringify([{ requestHex }])
-    }
-    return "[]"
-  })
+  ctx.credentials = { type: "session", requestHex }
 }
 
 function mockRestApi(ctx, options = {}) {
@@ -367,21 +357,11 @@ describe("perplexity plugin", () => {
     expect(() => plugin.probe(ctx)).toThrow("Usage data unavailable")
   })
 
-  it("recovers when primary cache sqlite read fails and fallback cache is valid", async () => {
+  it("uses account-imported session when cache import succeeded", async () => {
     const ctx = makeCtx()
     const token = makeJwtLikeToken()
     const requestHex = makeRequestHexWithBearer(token)
-    const originalExists = ctx.host.fs.exists
-
-    ctx.host.fs.exists = (path) =>
-      path === PRIMARY_CACHE_DB_PATH || path === FALLBACK_CACHE_DB_PATH || originalExists(path)
-
-    ctx.host.sqlite.query.mockImplementation((dbPath, sql) => {
-      if (!String(sql).includes("https://www.perplexity.ai/api/user")) return "[]"
-      if (dbPath === PRIMARY_CACHE_DB_PATH) throw new Error("primary db locked")
-      if (dbPath === FALLBACK_CACHE_DB_PATH) return JSON.stringify([{ requestHex }])
-      return "[]"
-    })
+    ctx.credentials = { type: "session", requestHex }
     mockRestApi(ctx)
 
     const plugin = await loadPlugin()
@@ -389,28 +369,24 @@ describe("perplexity plugin", () => {
     expect(result.lines[0].label).toBe("API credits")
   })
 
-  it("continues when primary cache exists-check throws and fallback has a session", async () => {
+  it("does not touch cache files during probe", async () => {
     const ctx = makeCtx()
     const token = makeJwtLikeToken()
     const requestHex = makeRequestHexWithBearer(token)
-    const originalExists = ctx.host.fs.exists
-
-    ctx.host.fs.exists = (path) => {
-      if (path === PRIMARY_CACHE_DB_PATH) throw new Error("permission denied")
-      if (path === FALLBACK_CACHE_DB_PATH) return true
-      return originalExists(path)
-    }
-    ctx.host.sqlite.query.mockImplementation((dbPath, sql) => {
-      if (dbPath === FALLBACK_CACHE_DB_PATH && String(sql).includes("https://www.perplexity.ai/api/user")) {
-        return JSON.stringify([{ requestHex }])
-      }
-      return "[]"
+    ctx.credentials = { type: "session", requestHex }
+    ctx.host.fs.exists = vi.fn(() => {
+      throw new Error("fs.exists should not be called")
+    })
+    ctx.host.sqlite.query.mockImplementation(() => {
+      throw new Error("sqlite should not be queried")
     })
     mockRestApi(ctx)
 
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
     expect(result.lines[0].label).toBe("API credits")
+    expect(ctx.host.fs.exists).not.toHaveBeenCalled()
+    expect(ctx.host.sqlite.query).not.toHaveBeenCalled()
   })
 
   it("parses balance from regex-matched credit key path", async () => {

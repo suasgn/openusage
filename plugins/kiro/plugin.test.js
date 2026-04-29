@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { makeCtx } from "../test-helpers.js"
 
-const TOKEN_PATH = "~/.aws/sso/cache/kiro-auth-token.json"
-const PROFILE_PATH = "~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/profile.json"
 const LOG_PATH =
   "~/Library/Application Support/Kiro/logs/20260406T235910/window1/exthost/kiro.kiroAgent/q-client.log"
 
@@ -75,11 +73,11 @@ const makeUsageOutput = (overrides = {}) => ({
 })
 
 const writeToken = (ctx, token = makeToken()) => {
-  ctx.host.fs.writeText(TOKEN_PATH, JSON.stringify(token, null, 2))
+  ctx.credentials = { type: "oauth", ...token }
 }
 
 const writeProfile = (ctx, arn = makeToken().profileArn) => {
-  ctx.host.fs.writeText(PROFILE_PATH, JSON.stringify({ arn, name: "Google" }, null, 2))
+  ctx.credentials = { ...(ctx.credentials || { type: "oauth" }), profileArn: arn }
 }
 
 const mockStateDb = (ctx, payload) => {
@@ -228,9 +226,9 @@ describe("kiro plugin", () => {
 
     expect(result.plan).toBe("Kiro Free")
     expect(result.lines.find((line) => line.label === "Credits")).toBeTruthy()
-    const savedToken = JSON.parse(ctx.host.fs.readText(TOKEN_PATH))
-    expect(savedToken.accessToken).toBe("refreshed-access-token")
-    expect(savedToken.refreshToken).toBe("refreshed-refresh-token")
+    const updated = JSON.parse(result.updatedCredentialsJson)
+    expect(updated.accessToken).toBe("refreshed-access-token")
+    expect(updated.refreshToken).toBe("refreshed-refresh-token")
   })
 
   it("adds TokenType for external IdP live requests", async () => {

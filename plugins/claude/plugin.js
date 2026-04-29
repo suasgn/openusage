@@ -1,16 +1,13 @@
 (function () {
-  const DEFAULT_CLAUDE_HOME = "~/.claude"
-  const CRED_FILE_NAME = ".credentials.json"
-  const KEYCHAIN_SERVICE_PREFIX = "Claude Code"
   const PROD_BASE_API_URL = "https://api.anthropic.com"
-  const PROD_REFRESH_URL = "https://platform.claude.com/v1/oauth/token"
+  const PROD_REFRESH_URL = "https://console.anthropic.com/v1/oauth/token"
   const PROD_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
   const NON_PROD_CLIENT_ID = "22422756-60c9-4084-8eb7-27705fd5cf9a"
   const PROMOCLOCK_STATUS_URL = "https://promoclock.co/api/status"
   const PROMOCLOCK_PEAK_COLOR = "#ef4444"
   const PROMOCLOCK_OFF_PEAK_COLOR = "#22c55e"
   const SCOPES =
-    "user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
+    "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload"
   const REFRESH_BUFFER_MS = 5 * 60 * 1000 // refresh 5 minutes before expiration
 
   // Rate-limit state persisted across probe() calls (module scope survives re-invocations).
@@ -19,120 +16,6 @@
   let rateLimitedUntilMs = 0  // epoch ms; 0 = not rate-limited
   let lastUsageFetchMs = 0    // epoch ms of the most-recent API attempt
   let cachedUsageData = null  // last successful API response body (parsed JSON)
-
-  function utf8DecodeBytes(bytes) {
-    // Prefer native TextDecoder when available (QuickJS may not expose it).
-    if (typeof TextDecoder !== "undefined") {
-      try {
-        return new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes))
-      } catch {}
-    }
-
-    // Minimal UTF-8 decoder (replacement char on invalid sequences).
-    let out = ""
-    for (let i = 0; i < bytes.length; ) {
-      const b0 = bytes[i] & 0xff
-      if (b0 < 0x80) {
-        out += String.fromCharCode(b0)
-        i += 1
-        continue
-      }
-
-      // 2-byte
-      if (b0 >= 0xc2 && b0 <= 0xdf) {
-        if (i + 1 >= bytes.length) {
-          out += "\ufffd"
-          break
-        }
-        const b1 = bytes[i + 1] & 0xff
-        if ((b1 & 0xc0) !== 0x80) {
-          out += "\ufffd"
-          i += 1
-          continue
-        }
-        const cp = ((b0 & 0x1f) << 6) | (b1 & 0x3f)
-        out += String.fromCharCode(cp)
-        i += 2
-        continue
-      }
-
-      // 3-byte
-      if (b0 >= 0xe0 && b0 <= 0xef) {
-        if (i + 2 >= bytes.length) {
-          out += "\ufffd"
-          break
-        }
-        const b1 = bytes[i + 1] & 0xff
-        const b2 = bytes[i + 2] & 0xff
-        const validCont = (b1 & 0xc0) === 0x80 && (b2 & 0xc0) === 0x80
-        const notOverlong = !(b0 === 0xe0 && b1 < 0xa0)
-        const notSurrogate = !(b0 === 0xed && b1 >= 0xa0)
-        if (!validCont || !notOverlong || !notSurrogate) {
-          out += "\ufffd"
-          i += 1
-          continue
-        }
-        const cp = ((b0 & 0x0f) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f)
-        out += String.fromCharCode(cp)
-        i += 3
-        continue
-      }
-
-      // 4-byte
-      if (b0 >= 0xf0 && b0 <= 0xf4) {
-        if (i + 3 >= bytes.length) {
-          out += "\ufffd"
-          break
-        }
-        const b1 = bytes[i + 1] & 0xff
-        const b2 = bytes[i + 2] & 0xff
-        const b3 = bytes[i + 3] & 0xff
-        const validCont = (b1 & 0xc0) === 0x80 && (b2 & 0xc0) === 0x80 && (b3 & 0xc0) === 0x80
-        const notOverlong = !(b0 === 0xf0 && b1 < 0x90)
-        const notTooHigh = !(b0 === 0xf4 && b1 > 0x8f)
-        if (!validCont || !notOverlong || !notTooHigh) {
-          out += "\ufffd"
-          i += 1
-          continue
-        }
-        const cp =
-          ((b0 & 0x07) << 18) | ((b1 & 0x3f) << 12) | ((b2 & 0x3f) << 6) | (b3 & 0x3f)
-        const n = cp - 0x10000
-        out += String.fromCharCode(0xd800 + ((n >> 10) & 0x3ff), 0xdc00 + (n & 0x3ff))
-        i += 4
-        continue
-      }
-
-      out += "\ufffd"
-      i += 1
-    }
-    return out
-  }
-
-  function tryParseCredentialJSON(ctx, text) {
-    if (!text) return null
-    const parsed = ctx.util.tryParseJson(text)
-    if (parsed) return parsed
-
-    // Some macOS keychain items are returned by `security ... -w` as hex-encoded UTF-8 bytes.
-    // Example prefix: "7b0a" ( "{\\n" ).
-    // Support both plain hex and "0x..." forms.
-    let hex = String(text).trim()
-    if (hex.startsWith("0x") || hex.startsWith("0X")) hex = hex.slice(2)
-    if (!hex || hex.length % 2 !== 0) return null
-    if (!/^[0-9a-fA-F]+$/.test(hex)) return null
-    try {
-      const bytes = []
-      for (let i = 0; i < hex.length; i += 2) {
-        bytes.push(parseInt(hex.slice(i, i + 2), 16))
-      }
-      const decoded = utf8DecodeBytes(bytes)
-      const decodedParsed = ctx.util.tryParseJson(decoded)
-      if (decodedParsed) return decodedParsed
-    } catch {}
-
-    return null
-  }
 
   function readEnvText(ctx, name) {
     try {
@@ -152,16 +35,8 @@
     return lower !== "0" && lower !== "false" && lower !== "no" && lower !== "off"
   }
 
-  function getClaudeHomePath(ctx) {
-    return readEnvText(ctx, "CLAUDE_CONFIG_DIR") || DEFAULT_CLAUDE_HOME
-  }
-
   function getClaudeHomeOverride(ctx) {
     return readEnvText(ctx, "CLAUDE_CONFIG_DIR")
-  }
-
-  function getClaudeCredentialsPath(ctx) {
-    return getClaudeHomePath(ctx) + "/" + CRED_FILE_NAME
   }
 
   function getOauthConfig(ctx) {
@@ -206,94 +81,38 @@
     }
   }
 
-  function getClaudeKeychainService(ctx) {
-    return KEYCHAIN_SERVICE_PREFIX + getOauthConfig(ctx).oauthFileSuffix + "-credentials"
+  function normalizeExpiresAtMs(value) {
+    const numberValue = Number(value)
+    if (!Number.isFinite(numberValue) || numberValue <= 0) return undefined
+    return numberValue < 100000000000 ? numberValue * 1000 : numberValue
   }
 
-  function readKeychainCredentialText(ctx, service) {
-    const keychain = ctx.host.keychain
-    if (!keychain) return null
+  function loadAccountCredentials(ctx) {
+    const creds = ctx.credentials
+    if (!creds || typeof creds !== "object") return null
+    if (!creds.accessToken && !creds.refreshToken) return null
 
-    if (typeof keychain.readGenericPasswordForCurrentUser === "function") {
-      try {
-        const value = keychain.readGenericPasswordForCurrentUser(service)
-        if (value) {
-          return { value, source: "keychain-current-user" }
-        }
-      } catch (e) {
-        ctx.host.log.info("current-user keychain read failed, trying legacy lookup: " + String(e))
-      }
+    const oauth = {
+      accessToken: creds.accessToken || "",
+      refreshToken: creds.refreshToken || "",
+      expiresAt: normalizeExpiresAtMs(creds.expiresAt),
+      subscriptionType: creds.subscriptionType || creds.subscription_type || null,
+      rateLimitTier: creds.rateLimitTier || creds.rate_limit_tier || null,
+    }
+    if (Array.isArray(creds.scopes)) {
+      oauth.scopes = creds.scopes
+    } else if (typeof creds.scope === "string") {
+      oauth.scopes = creds.scope.split(/\s+/).filter(Boolean)
     }
 
-    if (typeof keychain.readGenericPassword !== "function") return null
-
-    try {
-      const value = keychain.readGenericPassword(service)
-      if (value) {
-        return { value, source: "keychain-legacy" }
-      }
-    } catch (e) {
-      ctx.host.log.info("keychain read failed (may not exist): " + String(e))
+    return {
+      oauth: oauth,
+      inferenceOnly: creds.inferenceOnly === true,
     }
-
-    return null
-  }
-
-  function loadStoredCredentials(ctx, suppressMissingWarn) {
-    const credFile = getClaudeCredentialsPath(ctx)
-    // Try file first
-    if (ctx.host.fs.exists(credFile)) {
-      try {
-        const text = ctx.host.fs.readText(credFile)
-        const parsed = tryParseCredentialJSON(ctx, text)
-        if (parsed) {
-          const oauth = parsed.claudeAiOauth
-          if (oauth && oauth.accessToken) {
-            ctx.host.log.info("credentials loaded from file")
-            return { oauth, source: "file", fullData: parsed }
-          }
-        }
-        ctx.host.log.warn("credentials file exists but no valid oauth data")
-      } catch (e) {
-        ctx.host.log.warn("credentials file read failed: " + String(e))
-      }
-    }
-
-    // Try keychain fallback
-    const keychainResult = readKeychainCredentialText(ctx, getClaudeKeychainService(ctx))
-    if (keychainResult && keychainResult.value) {
-      const parsed = tryParseCredentialJSON(ctx, keychainResult.value)
-      if (parsed) {
-        const oauth = parsed.claudeAiOauth
-        if (oauth && oauth.accessToken) {
-          ctx.host.log.info("credentials loaded from keychain")
-          return { oauth, source: keychainResult.source, fullData: parsed }
-        }
-      }
-      ctx.host.log.warn("keychain has data but no valid oauth")
-    }
-
-    if (!suppressMissingWarn) {
-      ctx.host.log.warn("no credentials found")
-    }
-    return null
   }
 
   function loadCredentials(ctx) {
-    const envAccessToken = readEnvText(ctx, "CLAUDE_CODE_OAUTH_TOKEN")
-    const stored = loadStoredCredentials(ctx, !!envAccessToken)
-    if (!envAccessToken) {
-      return stored
-    }
-
-    const oauth = stored && stored.oauth ? Object.assign({}, stored.oauth) : {}
-    oauth.accessToken = envAccessToken
-    return {
-      oauth: oauth,
-      source: stored ? stored.source : null,
-      fullData: stored ? stored.fullData : null,
-      inferenceOnly: true,
-    }
+    return loadAccountCredentials(ctx)
   }
 
   function hasProfileScope(creds) {
@@ -307,35 +126,6 @@
     return true
   }
 
-  function saveCredentials(ctx, source, fullData) {
-    // MUST use minified JSON - macOS `security -w` hex-encodes values with newlines,
-    // which Claude Code can't read back, causing it to invalidate the session.
-    const text = JSON.stringify(fullData)
-    if (source === "file") {
-      try {
-        ctx.host.fs.writeText(getClaudeCredentialsPath(ctx), text)
-      } catch (e) {
-        ctx.host.log.error("Failed to write Claude credentials file: " + String(e))
-      }
-    } else if (source === "keychain-current-user") {
-      try {
-        if (typeof ctx.host.keychain.writeGenericPasswordForCurrentUser === "function") {
-          ctx.host.keychain.writeGenericPasswordForCurrentUser(getClaudeKeychainService(ctx), text)
-        } else {
-          ctx.host.keychain.writeGenericPassword(getClaudeKeychainService(ctx), text)
-        }
-      } catch (e) {
-        ctx.host.log.error("Failed to write Claude credentials keychain: " + String(e))
-      }
-    } else if (source === "keychain-legacy" || source === "keychain") {
-      try {
-        ctx.host.keychain.writeGenericPassword(getClaudeKeychainService(ctx), text)
-      } catch (e) {
-        ctx.host.log.error("Failed to write Claude credentials keychain: " + String(e))
-      }
-    }
-  }
-
   function needsRefresh(ctx, oauth, nowMs) {
     return ctx.util.needsRefreshByExpiry({
       nowMs,
@@ -345,7 +135,7 @@
   }
 
   function refreshToken(ctx, creds) {
-    const { oauth, source, fullData } = creds
+    const { oauth } = creds
     if (!oauth.refreshToken) {
       ctx.host.log.warn("refresh skipped: no refresh token")
       return null
@@ -399,10 +189,6 @@
       if (typeof body.expires_in === "number") {
         oauth.expiresAt = Date.now() + body.expires_in * 1000
       }
-
-      // Persist updated credentials
-      fullData.claudeAiOauth = oauth
-      saveCredentials(ctx, source, fullData)
 
       ctx.host.log.info("refresh succeeded, new token expires in " + (body.expires_in || "unknown") + "s")
       return newAccessToken
@@ -890,7 +676,18 @@
 
     if (promoClockLine) lines.push(promoClockLine)
 
-    return { plan: plan, lines: lines }
+    const result = { plan: plan, lines: lines }
+    result.updatedCredentialsJson = JSON.stringify({
+      type: "oauth",
+      accessToken: creds.oauth.accessToken || "",
+      refreshToken: creds.oauth.refreshToken || "",
+      expiresAt: creds.oauth.expiresAt ? Math.floor(Number(creds.oauth.expiresAt) / 1000) : null,
+      scope: Array.isArray(creds.oauth.scopes) ? creds.oauth.scopes.join(" ") : null,
+      subscriptionType: creds.oauth.subscriptionType || null,
+      rateLimitTier: creds.oauth.rateLimitTier || null,
+      inferenceOnly: creds.inferenceOnly === true,
+    })
+    return result
   }
 
   // _resetState is a testing hook — resets module-scope rate-limit state between tests.

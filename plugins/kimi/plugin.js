@@ -1,5 +1,4 @@
 (function () {
-  const CRED_PATH = "~/.kimi/credentials/kimi-code.json"
   const USAGE_URL = "https://api.kimi.com/coding/v1/usages"
   const REFRESH_URL = "https://auth.kimi.com/api/oauth/token"
   const CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098"
@@ -35,35 +34,21 @@
   }
 
   function loadCredentials(ctx) {
-    if (!ctx.host.fs.exists(CRED_PATH)) {
-      ctx.host.log.warn("credentials file not found: " + CRED_PATH)
+    const credentials = ctx.credentials && typeof ctx.credentials === "object" ? ctx.credentials : null
+    if (!credentials) return null
+    const accessToken = typeof credentials.access_token === "string" ? credentials.access_token.trim() : ""
+    const refreshToken = typeof credentials.refresh_token === "string" ? credentials.refresh_token.trim() : ""
+    if (!accessToken && !refreshToken) {
+      ctx.host.log.warn("credentials missing access_token and refresh_token")
       return null
     }
-
-    try {
-      const text = ctx.host.fs.readText(CRED_PATH)
-      const parsed = ctx.util.tryParseJson(text)
-      if (!parsed || typeof parsed !== "object") {
-        ctx.host.log.warn("credentials file is not valid json")
-        return null
-      }
-      if (!parsed.access_token && !parsed.refresh_token) {
-        ctx.host.log.warn("credentials missing access_token and refresh_token")
-        return null
-      }
-      return parsed
-    } catch (e) {
-      ctx.host.log.warn("credentials read failed: " + String(e))
-      return null
-    }
+    credentials.access_token = accessToken
+    credentials.refresh_token = refreshToken
+    return credentials
   }
 
-  function saveCredentials(ctx, creds) {
-    try {
-      ctx.host.fs.writeText(CRED_PATH, JSON.stringify(creds))
-    } catch (e) {
-      ctx.host.log.warn("failed to persist credentials: " + String(e))
-    }
+  function credentialsJson(creds) {
+    return JSON.stringify(creds)
   }
 
   function needsRefresh(creds, nowSec) {
@@ -125,7 +110,6 @@
     if (typeof body.scope === "string") creds.scope = body.scope
     if (typeof body.token_type === "string") creds.token_type = body.token_type
 
-    saveCredentials(ctx, creds)
     return creds.access_token
   }
 
@@ -247,11 +231,13 @@
 
     const nowSec = Date.now() / 1000
     let accessToken = creds.access_token || ""
+    let credentialsUpdated = false
 
     if (needsRefresh(creds, nowSec)) {
       const refreshed = refreshToken(ctx, creds)
       if (refreshed) {
         accessToken = refreshed
+        credentialsUpdated = true
       } else if (!accessToken) {
         throw "Not logged in. Run `kimi login` to authenticate."
       }
@@ -267,7 +253,10 @@
         refresh: function () {
           didRefresh = true
           const refreshed = refreshToken(ctx, creds)
-          if (refreshed) accessToken = refreshed
+          if (refreshed) {
+            accessToken = refreshed
+            credentialsUpdated = true
+          }
           return refreshed
         },
       })
@@ -348,10 +337,12 @@
       lines.push(ctx.line.badge({ label: "Status", text: "No usage data", color: "#a3a3a3" }))
     }
 
-    return {
+    const result = {
       plan: parsePlanLabel(data),
       lines,
     }
+    if (credentialsUpdated) result.updatedCredentialsJson = credentialsJson(creds)
+    return result
   }
 
   globalThis.__openusage_plugin = { id: "kimi", probe }

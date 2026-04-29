@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react"
 import type { ActiveView, NavPlugin } from "@/components/side-nav"
 import type { PluginMeta } from "@/lib/plugin-types"
 import type { PluginSettings } from "@/lib/settings"
+import { getEnabledPluginIds } from "@/lib/settings"
 import type { PluginState } from "@/hooks/app/types"
 
 export type DisplayPluginState = { meta: PluginMeta } & PluginState
@@ -23,11 +24,9 @@ export function useAppPluginViews({
 }: UseAppPluginViewsArgs) {
   const displayPlugins = useMemo<DisplayPluginState[]>(() => {
     if (!pluginSettings) return []
-    const disabledSet = new Set(pluginSettings.disabled)
     const metaById = new Map(pluginsMeta.map((plugin) => [plugin.id, plugin]))
 
-    return pluginSettings.order
-      .filter((id) => !disabledSet.has(id))
+    return getEnabledPluginIds(pluginSettings)
       .map((id) => {
         const meta = metaById.get(id)
         if (!meta) return null
@@ -40,11 +39,9 @@ export function useAppPluginViews({
 
   const navPlugins = useMemo<NavPlugin[]>(() => {
     if (!pluginSettings) return []
-    const disabledSet = new Set(pluginSettings.disabled)
     const metaById = new Map(pluginsMeta.map((plugin) => [plugin.id, plugin]))
 
-    return pluginSettings.order
-      .filter((id) => !disabledSet.has(id))
+    return getEnabledPluginIds(pluginSettings)
       .map((id) => metaById.get(id))
       .filter((plugin): plugin is PluginMeta => Boolean(plugin))
       .map((plugin) => ({

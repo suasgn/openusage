@@ -1,8 +1,4 @@
 (function () {
-  const AUTH_V2_PATH = "~/.factory/auth.v2.file"
-  const AUTH_V2_KEY_PATH = "~/.factory/auth.v2.key"
-  const AUTH_PATHS = ["~/.factory/auth.encrypted", "~/.factory/auth.json"]
-  const KEYCHAIN_SERVICES = ["Factory Token", "Factory token", "Factory Auth", "Droid Auth"]
   const WORKOS_CLIENT_ID = "client_01HNM792M5G5G1A2THWPXKFMXB"
   const WORKOS_AUTH_URL = "https://api.workos.com/user_management/authenticate"
   const USAGE_URL = "https://api.factory.ai/api/organization/subscription/usage"
@@ -93,148 +89,18 @@
     return null
   }
 
-  function loadAuthFromV2File(ctx) {
-    if (!ctx.host.crypto || typeof ctx.host.crypto.decryptAes256Gcm !== "function") {
-      return null
-    }
-    if (!ctx.host.fs.exists(AUTH_V2_PATH) || !ctx.host.fs.exists(AUTH_V2_KEY_PATH)) {
-      return null
-    }
-
-    try {
-      const envelope = ctx.host.fs.readText(AUTH_V2_PATH)
-      const key = ctx.host.fs.readText(AUTH_V2_KEY_PATH)
-      const decrypted = ctx.host.crypto.decryptAes256Gcm(envelope, key)
-      const auth = parseAuthPayload(ctx, decrypted, { allowPartial: true })
-      if (!auth) {
-        ctx.host.log.warn("auth file exists but has no valid auth payload: " + AUTH_V2_PATH)
-        return null
-      }
-      ctx.host.log.info("auth loaded from file: " + AUTH_V2_PATH)
-      return {
-        auth,
-        source: "file-v2",
-        authPath: AUTH_V2_PATH,
-        authKey: key,
-        keychainService: null,
-      }
-    } catch (e) {
-      ctx.host.log.warn("auth file read failed: " + String(e))
-      return null
-    }
-  }
-
-  function loadAuthFromFiles(ctx) {
-    const v2Auth = loadAuthFromV2File(ctx)
-    if (v2Auth) return v2Auth
-
-    for (const authPath of AUTH_PATHS) {
-      if (!ctx.host.fs.exists(authPath)) continue
-
-      try {
-        const text = ctx.host.fs.readText(authPath)
-        const auth = parseAuthPayload(ctx, text, { allowPartial: true })
-        if (!auth) {
-          ctx.host.log.warn("auth file exists but has no valid auth payload: " + authPath)
-          continue
-        }
-        ctx.host.log.info("auth loaded from file: " + authPath)
-        return { auth, source: "file", authPath, keychainService: null }
-      } catch (e) {
-        ctx.host.log.warn("auth file read failed: " + String(e))
-      }
-    }
-
-    return null
-  }
-
-  function loadAuthFromKeychain(ctx) {
-    if (!ctx.host.keychain || typeof ctx.host.keychain.readGenericPassword !== "function") {
-      return null
-    }
-
-    for (const service of KEYCHAIN_SERVICES) {
-      try {
-        const value = ctx.host.keychain.readGenericPassword(service)
-        if (!value) continue
-
-        const auth = parseAuthPayload(ctx, value)
-        if (!auth) {
-          ctx.host.log.warn("keychain has data but no valid auth payload: " + service)
-          continue
-        }
-
-        ctx.host.log.info("auth loaded from keychain: " + service)
-        return { auth, source: "keychain", authPath: null, keychainService: service }
-      } catch (e) {
-        ctx.host.log.info("keychain read failed (may not exist): " + String(e))
-      }
-    }
-
-    return null
-  }
-
   function loadAuth(ctx) {
-    const fileAuth = loadAuthFromFiles(ctx)
-    if (fileAuth) return fileAuth
-
-    const keychainAuth = loadAuthFromKeychain(ctx)
-    if (keychainAuth) return keychainAuth
-
-    if (!ctx.host.fs.exists(AUTH_V2_PATH)) {
-      ctx.host.log.warn("auth file not found: " + AUTH_V2_PATH)
-    }
-    if (!ctx.host.fs.exists(AUTH_V2_KEY_PATH)) {
-      ctx.host.log.warn("auth file not found: " + AUTH_V2_KEY_PATH)
-    }
-    for (const authPath of AUTH_PATHS) {
-      if (!ctx.host.fs.exists(authPath)) {
-        ctx.host.log.warn("auth file not found: " + authPath)
-      }
-    }
-
-    return null
+    const auth = normalizeAuthPayload(ctx.credentials, { allowPartial: true })
+    return auth ? { auth } : null
   }
 
-  function saveAuth(ctx, authState) {
-    const auth = authState && authState.auth ? authState.auth : null
-    if (!auth) return false
-
-    try {
-      if (authState.source === "file-v2" && authState.authPath && authState.authKey) {
-        if (!ctx.host.crypto || typeof ctx.host.crypto.encryptAes256Gcm !== "function") {
-          ctx.host.log.warn("auth persistence skipped: unsupported source " + authState.source)
-          return false
-        }
-        const envelope = ctx.host.crypto.encryptAes256Gcm(JSON.stringify(auth, null, 2), authState.authKey)
-        ctx.host.fs.writeText(authState.authPath, envelope)
-        ctx.host.log.info("auth file updated: " + authState.authPath)
-        return true
-      }
-
-      if (authState.source === "file" && authState.authPath) {
-        ctx.host.fs.writeText(authState.authPath, JSON.stringify(auth, null, 2))
-        ctx.host.log.info("auth file updated: " + authState.authPath)
-        return true
-      }
-
-      if (
-        authState.source === "keychain" &&
-        authState.keychainService &&
-        ctx.host.keychain &&
-        typeof ctx.host.keychain.writeGenericPassword === "function"
-      ) {
-        ctx.host.keychain.writeGenericPassword(authState.keychainService, JSON.stringify(auth))
-        ctx.host.log.info("auth keychain item updated: " + authState.keychainService)
-        return true
-      }
-
-      ctx.host.log.warn("auth persistence skipped: unsupported source")
-      return false
-    } catch (e) {
-      ctx.host.log.warn("failed to save auth: " + String(e))
-      return false
-    }
+  function credentialsJson(authState) {
+    const auth = authState.auth
+    return JSON.stringify({
+      type: "oauth",
+      accessToken: auth.access_token || "",
+      refreshToken: auth.refresh_token || "",
+    })
   }
 
   function getAccessTokenExpiryMs(ctx, accessToken) {
@@ -301,8 +167,6 @@
         auth.refresh_token = body.refresh_token
       }
 
-      // Save updated auth
-      saveAuth(ctx, authState)
       ctx.host.log.info("refresh succeeded")
 
       return newAccessToken
@@ -352,7 +216,7 @@
     const auth = authState.auth
     if (!auth.access_token) {
       ctx.host.log.error("probe failed: no access_token in auth data")
-      throw "Invalid auth file. Run `droid` to authenticate."
+      throw "Invalid auth credentials. Run `droid` to authenticate."
     }
 
     let accessToken = auth.access_token
@@ -480,7 +344,7 @@
       lines.push(ctx.line.badge({ label: "Status", text: "No usage data", color: "#a3a3a3" }))
     }
 
-    return { plan: plan, lines: lines }
+    return { plan: plan, lines: lines, updatedCredentialsJson: credentialsJson(authState) }
   }
 
   globalThis.__openusage_plugin = { id: "factory", probe }

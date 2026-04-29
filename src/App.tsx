@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useShallow } from "zustand/react/shallow"
 import { AppShell } from "@/components/app/app-shell"
 import { useAppPluginViews } from "@/hooks/app/use-app-plugin-views"
@@ -10,15 +10,13 @@ import { useSettingsPluginList } from "@/hooks/app/use-settings-plugin-list"
 import { useSettingsSystemActions } from "@/hooks/app/use-settings-system-actions"
 import { useSettingsTheme } from "@/hooks/app/use-settings-theme"
 import { useTrayIcon } from "@/hooks/app/use-tray-icon"
-import { track } from "@/lib/analytics"
-import { REFRESH_COOLDOWN_MS, savePluginSettings } from "@/lib/settings"
+import { loadAccountOrderByPlugin, REFRESH_COOLDOWN_MS, type AccountOrderByPlugin } from "@/lib/settings"
 import { type PluginContextAction } from "@/components/side-nav"
 import { useAppPluginStore } from "@/stores/app-plugin-store"
 import { useAppPreferencesStore } from "@/stores/app-preferences-store"
 import { useAppUiStore } from "@/stores/app-ui-store"
 
 const TRAY_PROBE_DEBOUNCE_MS = 500
-const TRAY_SETTINGS_DEBOUNCE_MS = 2000
 
 function App() {
   const {
@@ -76,8 +74,23 @@ function App() {
   )
 
   const scheduleProbeTrayUpdateRef = useRef<() => void>(() => {})
+  const [accountOrderByPlugin, setAccountOrderByPlugin] = useState<AccountOrderByPlugin>({})
   const handleProbeResult = useCallback(() => {
     scheduleProbeTrayUpdateRef.current()
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+    loadAccountOrderByPlugin()
+      .then((order) => {
+        if (mounted) setAccountOrderByPlugin(order)
+      })
+      .catch((error) => {
+        console.error("Failed to load account order:", error)
+      })
+    return () => {
+      mounted = false
+    }
   }, [])
 
   const {
@@ -161,9 +174,6 @@ function App() {
   } = useSettingsPluginActions({
     pluginSettings,
     setPluginSettings,
-    setLoadingForPlugins,
-    setErrorForPlugins,
-    startBatch,
     scheduleTrayIconUpdate,
   })
 
@@ -189,30 +199,21 @@ function App() {
     (pluginId: string, action: PluginContextAction) => {
       if (action === "reload") {
         handleRetryPlugin(pluginId)
-        return
-      }
-
-      const currentSettings = pluginSettingsRef.current
-      if (!currentSettings) return
-      const alreadyDisabled = currentSettings.disabled.includes(pluginId)
-      if (alreadyDisabled) return
-
-      track("provider_toggled", { provider_id: pluginId, enabled: "false" })
-      const nextSettings = {
-        ...currentSettings,
-        disabled: [...currentSettings.disabled, pluginId],
-      }
-      setPluginSettings(nextSettings)
-      scheduleTrayIconUpdate("settings", TRAY_SETTINGS_DEBOUNCE_MS)
-      void savePluginSettings(nextSettings).catch((error) => {
-        console.error("Failed to save plugin toggle:", error)
-      })
-
-      if (activeView === pluginId) {
-        setActiveView("home")
       }
     },
-    [activeView, handleRetryPlugin, scheduleTrayIconUpdate, setActiveView, setPluginSettings]
+    [handleRetryPlugin]
+  )
+
+  const handleAccountChanged = useCallback(
+    (pluginId: string) => {
+      if (!pluginSettingsRef.current) return
+      setLoadingForPlugins([pluginId])
+      startBatch([pluginId]).catch((error) => {
+        console.error("Failed to refresh plugin after account change:", error)
+        setErrorForPlugins([pluginId], "Failed to start probe")
+      })
+    },
+    [setErrorForPlugins, setLoadingForPlugins, startBatch]
   )
 
   const isPluginRefreshAvailable = useCallback(
@@ -234,13 +235,15 @@ function App() {
       settingsPlugins={settingsPlugins}
       autoUpdateNextAt={autoUpdateNextAt}
       selectedPlugin={selectedPlugin}
+      accountOrderByPlugin={accountOrderByPlugin}
       onPluginContextAction={handlePluginContextAction}
       isPluginRefreshAvailable={isPluginRefreshAvailable}
       onNavReorder={handleReorder}
       appContentProps={{
         onRetryPlugin: handleRetryPlugin,
-        onReorder: handleReorder,
-        onToggle: handleToggle,
+        onAccountChanged: handleAccountChanged,
+        onAccountOrderChanged: setAccountOrderByPlugin,
+        onPluginEnabledChange: handleToggle,
         onAutoUpdateIntervalChange: handleAutoUpdateIntervalChange,
         onThemeModeChange: handleThemeModeChange,
         onDisplayModeChange: handleDisplayModeChange,

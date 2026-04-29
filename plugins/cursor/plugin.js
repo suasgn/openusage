@@ -1,8 +1,4 @@
 (function () {
-  const STATE_DB =
-    "~/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
-  const KEYCHAIN_ACCESS_TOKEN_SERVICE = "cursor-access-token"
-  const KEYCHAIN_REFRESH_TOKEN_SERVICE = "cursor-refresh-token"
   const BASE_URL = "https://api2.cursor.sh"
   const USAGE_URL = BASE_URL + "/aiserver.v1.DashboardService/GetCurrentPeriodUsage"
   const PLAN_URL = BASE_URL + "/aiserver.v1.DashboardService/GetPlanInfo"
@@ -14,132 +10,35 @@
   const REFRESH_BUFFER_MS = 5 * 60 * 1000 // refresh 5 minutes before expiration
   const LOGIN_HINT = "Sign in via Cursor app or run `agent login`."
 
-  function readStateValue(ctx, key) {
-    try {
-      const sql =
-        "SELECT value FROM ItemTable WHERE key = '" + key + "' LIMIT 1;"
-      const json = ctx.host.sqlite.query(STATE_DB, sql)
-      const rows = ctx.util.tryParseJson(json)
-      if (!Array.isArray(rows)) {
-        throw new Error("sqlite returned invalid json")
-      }
-      if (rows.length > 0 && rows[0].value) {
-        return rows[0].value
-      }
-    } catch (e) {
-      ctx.host.log.warn("sqlite read failed for " + key + ": " + String(e))
-    }
-    return null
-  }
-
-  function writeStateValue(ctx, key, value) {
-    try {
-      // Escape single quotes in value for SQL
-      const escaped = String(value).replace(/'/g, "''")
-      const sql =
-        "INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('" +
-        key +
-        "', '" +
-        escaped +
-        "');"
-      ctx.host.sqlite.exec(STATE_DB, sql)
-      return true
-    } catch (e) {
-      ctx.host.log.warn("sqlite write failed for " + key + ": " + String(e))
-      return false
-    }
-  }
-
-  function readKeychainValue(ctx, service) {
-    if (!ctx.host.keychain || typeof ctx.host.keychain.readGenericPassword !== "function") {
-      return null
-    }
-    try {
-      const value = ctx.host.keychain.readGenericPassword(service)
-      if (typeof value !== "string") return null
-      const trimmed = value.trim()
-      return trimmed || null
-    } catch (e) {
-      ctx.host.log.info("keychain read failed for " + service + ": " + String(e))
-      return null
-    }
-  }
-
-  function writeKeychainValue(ctx, service, value) {
-    if (!ctx.host.keychain || typeof ctx.host.keychain.writeGenericPassword !== "function") {
-      ctx.host.log.warn("keychain write unsupported")
-      return false
-    }
-    try {
-      ctx.host.keychain.writeGenericPassword(service, String(value))
-      return true
-    } catch (e) {
-      ctx.host.log.warn("keychain write failed for " + service + ": " + String(e))
-      return false
-    }
+  function readString(value) {
+    return typeof value === "string" && value.trim() ? value.trim() : null
   }
 
   function loadAuthState(ctx) {
-    const sqliteAccessToken = readStateValue(ctx, "cursorAuth/accessToken")
-    const sqliteRefreshToken = readStateValue(ctx, "cursorAuth/refreshToken")
-    const sqliteMembershipTypeRaw = readStateValue(ctx, "cursorAuth/stripeMembershipType")
-    const sqliteMembershipType = typeof sqliteMembershipTypeRaw === "string"
-      ? sqliteMembershipTypeRaw.trim().toLowerCase()
-      : null
-
-    const keychainAccessToken = readKeychainValue(ctx, KEYCHAIN_ACCESS_TOKEN_SERVICE)
-    const keychainRefreshToken = readKeychainValue(ctx, KEYCHAIN_REFRESH_TOKEN_SERVICE)
-
-    const sqliteSubject = getTokenSubject(ctx, sqliteAccessToken)
-    const keychainSubject = getTokenSubject(ctx, keychainAccessToken)
-    const hasDifferentSubjects = !!sqliteSubject && !!keychainSubject && sqliteSubject !== keychainSubject
-    const sqliteLooksFree = sqliteMembershipType === "free"
-
-    if (sqliteAccessToken || sqliteRefreshToken) {
-      if ((keychainAccessToken || keychainRefreshToken) && sqliteLooksFree && hasDifferentSubjects) {
-        ctx.host.log.info("sqlite auth looks free and differs from keychain account; preferring keychain token")
-        return {
-          accessToken: keychainAccessToken,
-          refreshToken: keychainRefreshToken,
-          source: "keychain",
-        }
-      }
-
-      return {
-        accessToken: sqliteAccessToken,
-        refreshToken: sqliteRefreshToken,
-        source: "sqlite",
-      }
+    const source = ctx.credentials
+    if (!source || typeof source !== "object") {
+      return { accessToken: null, refreshToken: null, credentials: { type: "oauth" } }
     }
 
-    if (keychainAccessToken || keychainRefreshToken) {
-      return {
-        accessToken: keychainAccessToken,
-        refreshToken: keychainRefreshToken,
-        source: "keychain",
-      }
-    }
-
+    const accessToken = readString(source.accessToken || source.access_token)
+    const refreshToken = readString(source.refreshToken || source.refresh_token)
     return {
-      accessToken: null,
-      refreshToken: null,
-      source: null,
+      accessToken,
+      refreshToken,
+      credentials: {
+        type: source.type || "oauth",
+        accessToken: accessToken || "",
+        refreshToken: refreshToken || "",
+      },
     }
   }
 
-  function getTokenSubject(ctx, token) {
-    if (!token) return null
-    const payload = ctx.jwt.decodePayload(token)
-    if (!payload || typeof payload.sub !== "string") return null
-    const subject = payload.sub.trim()
-    return subject || null
+  function credentialsJson(authState) {
+    return JSON.stringify(authState.credentials)
   }
 
-  function persistAccessToken(ctx, source, accessToken) {
-    if (source === "keychain") {
-      return writeKeychainValue(ctx, KEYCHAIN_ACCESS_TOKEN_SERVICE, accessToken)
-    }
-    return writeStateValue(ctx, "cursorAuth/accessToken", accessToken)
+  function withCredentials(result, authState) {
+    return Object.assign({}, result, { updatedCredentialsJson: credentialsJson(authState) })
   }
 
   function getTokenExpiration(ctx, token) {
@@ -158,7 +57,8 @@
     })
   }
 
-  function refreshToken(ctx, refreshTokenValue, source) {
+  function refreshToken(ctx, authState) {
+    const refreshTokenValue = authState.refreshToken
     if (!refreshTokenValue) {
       ctx.host.log.warn("refresh skipped: no refresh token")
       return null
@@ -212,9 +112,13 @@
         return null
       }
 
-      // Persist updated access token to source where auth was loaded from.
-      persistAccessToken(ctx, source, newAccessToken)
-      ctx.host.log.info("refresh succeeded, token persisted")
+      authState.accessToken = newAccessToken
+      authState.credentials.accessToken = newAccessToken
+      if (typeof body.refresh_token === "string" && body.refresh_token.trim()) {
+        authState.refreshToken = body.refresh_token.trim()
+        authState.credentials.refreshToken = authState.refreshToken
+      }
+      ctx.host.log.info("refresh succeeded")
 
       // Note: Cursor refresh returns access_token which is used as both
       // access and refresh token in some flows
@@ -377,15 +281,13 @@
   function probe(ctx) {
     const authState = loadAuthState(ctx)
     let accessToken = authState.accessToken
-    const refreshTokenValue = authState.refreshToken
-    const authSource = authState.source
 
-    if (!accessToken && !refreshTokenValue) {
-      ctx.host.log.error("probe failed: no access or refresh token in sqlite/keychain")
+    if (!accessToken && !authState.refreshToken) {
+      ctx.host.log.error("probe failed: no access or refresh token in account credentials")
       throw "Not logged in. " + LOGIN_HINT
     }
 
-    ctx.host.log.info("tokens loaded from " + authSource + ": accessToken=" + (accessToken ? "yes" : "no") + " refreshToken=" + (refreshTokenValue ? "yes" : "no"))
+    ctx.host.log.info("account tokens loaded: accessToken=" + (accessToken ? "yes" : "no") + " refreshToken=" + (authState.refreshToken ? "yes" : "no"))
 
     const nowMs = Date.now()
 
@@ -394,7 +296,7 @@
       ctx.host.log.info("token needs refresh (expired or expiring soon)")
       let refreshed = null
       try {
-        refreshed = refreshToken(ctx, refreshTokenValue, authSource)
+        refreshed = refreshToken(ctx, authState)
       } catch (e) {
         // If refresh fails but we have an access token, try it anyway
         ctx.host.log.warn("refresh failed but have access token, will try: " + String(e))
@@ -426,7 +328,7 @@
         refresh: () => {
           ctx.host.log.info("usage returned 401, attempting refresh")
           didRefresh = true
-          const refreshed = refreshToken(ctx, refreshTokenValue, authSource)
+          const refreshed = refreshToken(ctx, authState)
           if (refreshed) accessToken = refreshed
           return refreshed
         },
@@ -495,10 +397,10 @@
     if (needsRequestBasedFallback) {
       if (normalizedPlanName === "enterprise") {
         ctx.host.log.info("detected enterprise account, using REST usage API")
-        return buildEnterpriseResult(ctx, accessToken, planName)
+        return withCredentials(buildEnterpriseResult(ctx, accessToken, planName), authState)
       }
       ctx.host.log.info("detected team request-based account, using REST usage API")
-      return buildTeamRequestBasedResult(ctx, accessToken, planName)
+      return withCredentials(buildTeamRequestBasedResult(ctx, accessToken, planName), authState)
     }
 
     const needsFallbackWithoutPlanInfo = usage.enabled !== false &&
@@ -508,13 +410,13 @@
       planInfoUnavailable
     if (needsFallbackWithoutPlanInfo) {
       ctx.host.log.info("plan info unavailable with missing planUsage, attempting REST usage API fallback")
-      return buildUnknownRequestBasedResult(ctx, accessToken, planName)
+      return withCredentials(buildUnknownRequestBasedResult(ctx, accessToken, planName), authState)
     }
 
     if (usage.enabled !== false && planUsageLimitMissing && !hasTotalUsagePercent) {
       ctx.host.log.warn("planUsage.limit missing, attempting REST usage API fallback")
       try {
-        return buildUnknownRequestBasedResult(ctx, accessToken, planName)
+        return withCredentials(buildUnknownRequestBasedResult(ctx, accessToken, planName), authState)
       } catch (e) {
         ctx.host.log.warn("REST usage fallback unavailable: " + String(e))
       }
@@ -663,7 +565,7 @@
       }
     }
 
-    return { plan: plan, lines: lines }
+    return withCredentials({ plan: plan, lines: lines }, authState)
   }
 
   globalThis.__openusage_plugin = { id: "cursor", probe }

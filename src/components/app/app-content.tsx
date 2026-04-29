@@ -9,6 +9,7 @@ import { useAppPreferencesStore } from "@/stores/app-preferences-store"
 import { useAppUiStore } from "@/stores/app-ui-store"
 import type {
   AutoUpdateIntervalMinutes,
+  AccountOrderByPlugin,
   DisplayMode,
   GlobalShortcut,
   MenubarIconStyle,
@@ -20,12 +21,14 @@ type AppContentDerivedProps = {
   displayPlugins: DisplayPluginState[]
   settingsPlugins: SettingsPluginState[]
   selectedPlugin: DisplayPluginState | null
+  accountOrderByPlugin?: AccountOrderByPlugin
 }
 
 export type AppContentActionProps = {
   onRetryPlugin: (id: string) => void
-  onReorder: (orderedIds: string[]) => void
-  onToggle: (id: string) => void
+  onAccountChanged: (pluginId: string) => void
+  onAccountOrderChanged?: (order: AccountOrderByPlugin) => void
+  onPluginEnabledChange: (pluginId: string, enabled: boolean) => void
   onAutoUpdateIntervalChange: (value: AutoUpdateIntervalMinutes) => void
   onThemeModeChange: (mode: ThemeMode) => void
   onDisplayModeChange: (mode: DisplayMode) => void
@@ -43,9 +46,11 @@ export function AppContent({
   displayPlugins,
   settingsPlugins,
   selectedPlugin,
+  accountOrderByPlugin = {},
   onRetryPlugin,
-  onReorder,
-  onToggle,
+  onAccountChanged,
+  onAccountOrderChanged,
+  onPluginEnabledChange,
   onAutoUpdateIntervalChange,
   onThemeModeChange,
   onDisplayModeChange,
@@ -86,6 +91,7 @@ export function AppContent({
     return (
       <OverviewPage
         plugins={displayPlugins}
+        accountOrderByPlugin={accountOrderByPlugin}
         onRetryPlugin={onRetryPlugin}
         displayMode={displayMode}
         resetTimerDisplayMode={resetTimerDisplayMode}
@@ -98,8 +104,9 @@ export function AppContent({
     return (
       <SettingsPage
         plugins={settingsPlugins}
-        onReorder={onReorder}
-        onToggle={onToggle}
+        onAccountChanged={onAccountChanged}
+        onAccountOrderChanged={onAccountOrderChanged}
+        onPluginEnabledChange={onPluginEnabledChange}
         autoUpdateInterval={autoUpdateInterval}
         onAutoUpdateIntervalChange={onAutoUpdateIntervalChange}
         themeMode={themeMode}
@@ -126,6 +133,7 @@ export function AppContent({
   return (
     <ProviderDetailPage
       plugin={selectedPlugin}
+      accountOrder={selectedPlugin ? accountOrderByPlugin[selectedPlugin.meta.id] ?? [] : []}
       onRetry={handleRetry}
       displayMode={displayMode}
       resetTimerDisplayMode={resetTimerDisplayMode}

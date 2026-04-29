@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
-import { makeCtx } from "../test-helpers.js"
+import { makeCtx as makeBaseCtx } from "../test-helpers.js"
 
 let plugin = null
 
@@ -14,6 +14,63 @@ beforeEach(() => {
 })
 
 const loadPlugin = async () => plugin
+
+const setClaudeCredentials = (ctx, oauth, options = {}) => {
+  ctx.credentials = {
+    type: "oauth",
+    accessToken: oauth.accessToken || "",
+    refreshToken: oauth.refreshToken || "",
+    expiresAt: oauth.expiresAt || null,
+    subscriptionType: oauth.subscriptionType || null,
+    rateLimitTier: oauth.rateLimitTier || null,
+    scope: Array.isArray(oauth.scopes) ? oauth.scopes.join(" ") : oauth.scope || null,
+    inferenceOnly: options.inferenceOnly === true,
+  }
+}
+
+const setLegacyClaudeCredentials = (ctx, raw) => {
+  const parsed = ctx.util.tryParseJson(raw)
+  if (!parsed || typeof parsed !== "object") return false
+  const oauth = parsed.claudeAiOauth || parsed.oauth || parsed
+  if (!oauth || typeof oauth !== "object" || !oauth.accessToken) return false
+  setClaudeCredentials(ctx, oauth, { inferenceOnly: parsed.inferenceOnly === true })
+  return true
+}
+
+const seedCredentialsFromReader = (ctx, reader) => {
+  const paths = []
+  try {
+    const configDir = ctx.host.env && ctx.host.env.get && ctx.host.env.get("CLAUDE_CONFIG_DIR")
+    if (typeof configDir === "string" && configDir.trim()) {
+      paths.push(configDir.trim().replace(/\/+$/, "") + "/.credentials.json")
+    }
+  } catch {
+    // Ignore fixture-only env failures.
+  }
+  paths.push("~/.claude/.credentials.json", "~/.config/claude/.credentials.json", ".credentials.json")
+
+  for (const path of paths) {
+    try {
+      if (setLegacyClaudeCredentials(ctx, reader(path))) return
+    } catch {
+      // Ignore missing fixture paths.
+    }
+  }
+}
+
+const makeCtx = () => {
+  const ctx = makeBaseCtx()
+  let readText = ctx.host.fs.readText
+  Object.defineProperty(ctx.host.fs, "readText", {
+    configurable: true,
+    get: () => readText,
+    set: (reader) => {
+      readText = reader
+      if (typeof reader === "function") seedCredentialsFromReader(ctx, reader)
+    },
+  })
+  return ctx
+}
 
 const SAMPLE_PROMOCLOCK_RESPONSE = {
   status: "off_peak",
@@ -93,35 +150,27 @@ describe("claude plugin", () => {
     }
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
-    expect(ctx.host.log.warn).toHaveBeenCalled()
   })
 
-  it("warns when credentials file exists but lacks a usable access token", async () => {
+  it("throws when account credentials lack a usable access token", async () => {
     const ctx = makeCtx()
-    ctx.host.fs.exists = () => true
-    ctx.host.fs.readText = () => JSON.stringify({ claudeAiOauth: { refreshToken: "only-refresh" } })
+    ctx.credentials = { type: "oauth", refreshToken: "only-refresh" }
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
-    expect(ctx.host.log.warn).toHaveBeenCalled()
   })
 
-  it("treats keychain read errors as missing credentials", async () => {
+  it("ignores legacy keychain failures without account credentials", async () => {
     const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
     ctx.host.keychain.readGenericPassword.mockImplementation(() => {
       throw new Error("keychain unavailable")
     })
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
-    expect(ctx.host.log.info).toHaveBeenCalled()
   })
 
-  it("prefers current-user keychain credentials when available", async () => {
+  it("uses account credentials when available", async () => {
     const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    ctx.host.keychain.readGenericPasswordForCurrentUser.mockReturnValue(
-      JSON.stringify({ claudeAiOauth: { accessToken: "token", subscriptionType: "pro" } })
-    )
+    setClaudeCredentials(ctx, { accessToken: "token", subscriptionType: "pro" })
     ctx.host.http.request.mockReturnValue({
       status: 200,
       bodyText: JSON.stringify({
@@ -132,65 +181,14 @@ describe("claude plugin", () => {
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
     expect(result.lines.find((line) => line.label === "Session")).toBeTruthy()
-    expect(ctx.host.keychain.readGenericPasswordForCurrentUser).toHaveBeenCalledWith(
-      "Claude Code-credentials"
-    )
     expect(ctx.host.keychain.readGenericPassword).not.toHaveBeenCalled()
   })
 
-  it("falls back to legacy keychain lookup when current-user lookup misses", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    ctx.host.keychain.readGenericPasswordForCurrentUser.mockImplementation(() => {
-      throw new Error("keychain item not found")
-    })
-    ctx.host.keychain.readGenericPassword.mockReturnValue(
-      JSON.stringify({ claudeAiOauth: { accessToken: "token", subscriptionType: "pro" } })
-    )
-    ctx.host.http.request.mockReturnValue({
-      status: 200,
-      bodyText: JSON.stringify({
-        five_hour: { utilization: 10, resets_at: "2099-01-01T00:00:00.000Z" },
-      }),
-    })
-
-    const plugin = await loadPlugin()
-    const result = plugin.probe(ctx)
-    expect(result.lines.find((line) => line.label === "Session")).toBeTruthy()
-    expect(ctx.host.keychain.readGenericPassword).toHaveBeenCalledWith("Claude Code-credentials")
-  })
-
-  it("falls back to keychain when credentials file is corrupt", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => true
-    ctx.host.fs.readText = () => "{bad json"
-    ctx.host.keychain.readGenericPassword.mockReturnValue(
-      JSON.stringify({ claudeAiOauth: { accessToken: "token", subscriptionType: "pro" } })
-    )
-    ctx.host.http.request.mockReturnValue({
-      status: 200,
-      bodyText: JSON.stringify({
-        five_hour: { utilization: 10, resets_at: "2099-01-01T00:00:00.000Z" },
-      }),
-    })
-    const plugin = await loadPlugin()
-    const result = plugin.probe(ctx)
-    expect(result.lines.find((line) => line.label === "Session")).toBeTruthy()
-  })
-
-  it("reads credentials from CLAUDE_CONFIG_DIR and passes it to ccusage", async () => {
+  it("passes CLAUDE_CONFIG_DIR to ccusage", async () => {
     const ctx = makeCtx()
     const configDir = "/tmp/custom-claude-home"
-    const configCredFile = configDir + "/.credentials.json"
-    const credsJson = JSON.stringify({ claudeAiOauth: { accessToken: "token", subscriptionType: "pro" } })
     ctx.host.env.get.mockImplementation((name) => (name === "CLAUDE_CONFIG_DIR" ? configDir : null))
-    ctx.host.fs.exists = vi.fn((path) => path === configCredFile)
-    ctx.host.fs.readText = vi.fn((path) => {
-      if (path !== configCredFile) {
-        throw new Error("unexpected readText path: " + path)
-      }
-      return credsJson
-    })
+    setClaudeCredentials(ctx, { accessToken: "token", subscriptionType: "pro" })
     ctx.host.http.request.mockReturnValue({
       status: 200,
       bodyText: JSON.stringify({
@@ -203,53 +201,14 @@ describe("claude plugin", () => {
     const result = plugin.probe(ctx)
 
     expect(result.lines.find((line) => line.label === "Session")).toBeTruthy()
-    expect(ctx.host.fs.readText).toHaveBeenCalledWith(configCredFile)
     expect(ctx.host.ccusage.query).toHaveBeenCalledWith(
       expect.objectContaining({ homePath: configDir })
     )
   })
 
-  it("looks up Claude Code-staging-oauth-credentials in keychain", async () => {
+  it("uses inference-only account tokens without hitting /api/oauth/usage", async () => {
     const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    ctx.host.env.get.mockImplementation((name) => {
-      if (name === "USER_TYPE") return "ant"
-      if (name === "USE_STAGING_OAUTH") return "1"
-      return null
-    })
-    ctx.host.keychain.readGenericPassword.mockImplementation((service) => {
-      if (service === "Claude Code-staging-oauth-credentials") {
-        return JSON.stringify({ claudeAiOauth: { accessToken: "token", subscriptionType: "pro" } })
-      }
-      if (service === "Claude Code-credentials") {
-        return JSON.stringify({ claudeAiOauth: { refreshToken: "fallback-only" } })
-      }
-      return null
-    })
-    ctx.host.http.request.mockReturnValue({
-      status: 200,
-      bodyText: JSON.stringify({
-        five_hour: { utilization: 10, resets_at: "2099-01-01T00:00:00.000Z" },
-      }),
-    })
-
-    const plugin = await loadPlugin()
-    const result = plugin.probe(ctx)
-    expect(result.lines.find((line) => line.label === "Session")).toBeTruthy()
-    expect(ctx.host.keychain.readGenericPassword).toHaveBeenCalledWith(
-      "Claude Code-staging-oauth-credentials"
-    )
-  })
-
-  it("uses env-injected OAuth tokens without hitting /api/oauth/usage", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    ctx.host.fs.readText = () => {
-      throw new Error("unexpected file read")
-    }
-    ctx.host.env.get.mockImplementation((name) =>
-      name === "CLAUDE_CODE_OAUTH_TOKEN" ? "env-oauth-token" : null
-    )
+    setClaudeCredentials(ctx, { accessToken: "inference-token" }, { inferenceOnly: true })
     ctx.host.http.request.mockReturnValue({
       status: 200,
       bodyText: JSON.stringify({
@@ -536,12 +495,9 @@ describe("claude plugin", () => {
     expect(noteLine.value).toContain("~now")
   })
 
-  it("uses keychain credentials", async () => {
+  it("renders Sonnet and extra usage from account credentials", async () => {
     const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    ctx.host.keychain.readGenericPassword.mockReturnValue(
-      JSON.stringify({ claudeAiOauth: { accessToken: "token", subscriptionType: "pro" } })
-    )
+    setClaudeCredentials(ctx, { accessToken: "token", subscriptionType: "pro" })
     ctx.host.http.request.mockReturnValue({
       status: 200,
       bodyText: JSON.stringify({
@@ -623,203 +579,6 @@ describe("claude plugin", () => {
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
     expect(result.lines.find((line) => line.label === "Extra usage spent")).toBeUndefined()
-  })
-
-  it("uses keychain credentials when value is hex-encoded JSON", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    const json = JSON.stringify({ claudeAiOauth: { accessToken: "token", subscriptionType: "pro" } }, null, 2)
-    const hex = Buffer.from(json, "utf8").toString("hex")
-    ctx.host.keychain.readGenericPassword.mockReturnValue(hex)
-    ctx.host.http.request.mockReturnValue({
-      status: 200,
-      bodyText: JSON.stringify({
-        five_hour: { utilization: 1, resets_at: "2099-01-01T00:00:00.000Z" },
-      }),
-    })
-    const plugin = await loadPlugin()
-    const result = plugin.probe(ctx)
-    expect(result.lines.find((line) => line.label === "Session")).toBeTruthy()
-  })
-
-  it("accepts 0x-prefixed hex keychain credentials", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    const json = JSON.stringify({ claudeAiOauth: { accessToken: "token", subscriptionType: "pro" } }, null, 2)
-    const hex = "0x" + Buffer.from(json, "utf8").toString("hex")
-    ctx.host.keychain.readGenericPassword.mockReturnValue(hex)
-    ctx.host.http.request.mockReturnValue({
-      status: 200,
-      bodyText: JSON.stringify({
-        five_hour: { utilization: 1, resets_at: "2099-01-01T00:00:00.000Z" },
-      }),
-    })
-    const plugin = await loadPlugin()
-    const result = plugin.probe(ctx)
-    expect(result.lines.find((line) => line.label === "Session")).toBeTruthy()
-  })
-
-  it("decodes hex-encoded UTF-8 correctly (non-ascii json)", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    const json = JSON.stringify({ claudeAiOauth: { accessToken: "token", subscriptionType: "pró" } }, null, 2)
-    const hex = Buffer.from(json, "utf8").toString("hex")
-    ctx.host.keychain.readGenericPassword.mockReturnValue(hex)
-    ctx.host.http.request.mockReturnValue({
-      status: 200,
-      bodyText: JSON.stringify({
-        five_hour: { utilization: 1, resets_at: "2099-01-01T00:00:00.000Z" },
-      }),
-    })
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).not.toThrow()
-  })
-
-  it("decodes 3-byte and 4-byte UTF-8 in hex-encoded JSON", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    const json = JSON.stringify(
-      { claudeAiOauth: { accessToken: "token", subscriptionType: "pro€🙂" } },
-      null,
-      2
-    )
-    const hex = Buffer.from(json, "utf8").toString("hex")
-    ctx.host.keychain.readGenericPassword.mockReturnValue(hex)
-    ctx.host.http.request.mockReturnValue({
-      status: 200,
-      bodyText: JSON.stringify({
-        five_hour: { utilization: 1, resets_at: "2099-01-01T00:00:00.000Z" },
-      }),
-    })
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).not.toThrow()
-  })
-
-  it("uses custom UTF-8 decoder when TextDecoder is unavailable", async () => {
-    const original = globalThis.TextDecoder
-    // Force plugin to use its fallback decoder.
-    // eslint-disable-next-line no-undef
-    delete globalThis.TextDecoder
-    try {
-      const ctx = makeCtx()
-      ctx.host.fs.exists = () => false
-      const json = JSON.stringify(
-        { claudeAiOauth: { accessToken: "token", subscriptionType: "pró€🙂" } },
-        null,
-        2
-      )
-      const hex = Buffer.from(json, "utf8").toString("hex")
-      ctx.host.keychain.readGenericPassword.mockReturnValue(hex)
-      ctx.host.http.request.mockReturnValue({
-        status: 200,
-        bodyText: JSON.stringify({
-          five_hour: { utilization: 1, resets_at: "2099-01-01T00:00:00.000Z" },
-        }),
-      })
-      const plugin = await loadPlugin()
-      expect(() => plugin.probe(ctx)).not.toThrow()
-    } finally {
-      globalThis.TextDecoder = original
-    }
-  })
-
-  it("custom decoder tolerates invalid byte sequences", async () => {
-    const original = globalThis.TextDecoder
-    // eslint-disable-next-line no-undef
-    delete globalThis.TextDecoder
-    try {
-      const ctx = makeCtx()
-      ctx.host.fs.exists = () => false
-      // Invalid UTF-8 bytes (will produce replacement chars).
-      ctx.host.keychain.readGenericPassword.mockReturnValue("c200ff")
-      const plugin = await loadPlugin()
-      expect(() => plugin.probe(ctx)).toThrow("Not logged in")
-    } finally {
-      globalThis.TextDecoder = original
-    }
-  })
-
-  it("custom decoder handles truncated 3-byte sequences in hex payloads", async () => {
-    const original = globalThis.TextDecoder
-    // eslint-disable-next-line no-undef
-    delete globalThis.TextDecoder
-    try {
-      const ctx = makeCtx()
-      ctx.host.fs.exists = () => false
-      ctx.host.keychain.readGenericPassword.mockReturnValue("e282")
-      const plugin = await loadPlugin()
-      expect(() => plugin.probe(ctx)).toThrow("Not logged in")
-    } finally {
-      globalThis.TextDecoder = original
-    }
-  })
-
-  it("custom decoder handles truncated 2-byte sequences in hex payloads", async () => {
-    const original = globalThis.TextDecoder
-    // eslint-disable-next-line no-undef
-    delete globalThis.TextDecoder
-    try {
-      const ctx = makeCtx()
-      ctx.host.fs.exists = () => false
-      ctx.host.keychain.readGenericPassword.mockReturnValue("c2")
-      const plugin = await loadPlugin()
-      expect(() => plugin.probe(ctx)).toThrow("Not logged in")
-    } finally {
-      globalThis.TextDecoder = original
-    }
-  })
-
-  it("custom decoder handles invalid 3-byte continuation sequences in hex payloads", async () => {
-    const original = globalThis.TextDecoder
-    // eslint-disable-next-line no-undef
-    delete globalThis.TextDecoder
-    try {
-      const ctx = makeCtx()
-      ctx.host.fs.exists = () => false
-      ctx.host.keychain.readGenericPassword.mockReturnValue("e228a1")
-      const plugin = await loadPlugin()
-      expect(() => plugin.probe(ctx)).toThrow("Not logged in")
-    } finally {
-      globalThis.TextDecoder = original
-    }
-  })
-
-  it("custom decoder handles invalid 4-byte sequences in hex payloads", async () => {
-    const original = globalThis.TextDecoder
-    // eslint-disable-next-line no-undef
-    delete globalThis.TextDecoder
-    try {
-      const ctx = makeCtx()
-      ctx.host.fs.exists = () => false
-      ctx.host.keychain.readGenericPassword.mockReturnValue("f0808080")
-      const plugin = await loadPlugin()
-      expect(() => plugin.probe(ctx)).toThrow("Not logged in")
-    } finally {
-      globalThis.TextDecoder = original
-    }
-  })
-
-  it("custom decoder handles truncated 4-byte sequences in hex payloads", async () => {
-    const original = globalThis.TextDecoder
-    // eslint-disable-next-line no-undef
-    delete globalThis.TextDecoder
-    try {
-      const ctx = makeCtx()
-      ctx.host.fs.exists = () => false
-      ctx.host.keychain.readGenericPassword.mockReturnValue("f09f98")
-      const plugin = await loadPlugin()
-      expect(() => plugin.probe(ctx)).toThrow("Not logged in")
-    } finally {
-      globalThis.TextDecoder = original
-    }
-  })
-
-  it("treats invalid hex credentials as not logged in", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    ctx.host.keychain.readGenericPassword.mockReturnValue("0x123") // odd length
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).toThrow("Not logged in")
   })
 
   it("throws on http errors and parse failures", async () => {
@@ -905,7 +664,7 @@ describe("claude plugin", () => {
     )
   })
 
-  it("refreshes token when expired and persists updated credentials", async () => {
+  it("refreshes token when expired and returns updated credentials", async () => {
     const ctx = makeCtx()
     ctx.host.fs.exists = () => true
     ctx.host.fs.readText = () =>
@@ -936,7 +695,10 @@ describe("claude plugin", () => {
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
     expect(result.lines.find((line) => line.label === "Session")).toBeTruthy()
-    expect(ctx.host.fs.writeText).toHaveBeenCalled()
+    expect(ctx.host.fs.writeText).not.toHaveBeenCalled()
+    const updated = JSON.parse(result.updatedCredentialsJson)
+    expect(updated.accessToken).toBe("new-token")
+    expect(updated.refreshToken).toBe("refresh2")
   })
 
   it("includes user:file_upload in the OAuth refresh scope", async () => {
@@ -973,40 +735,6 @@ describe("claude plugin", () => {
     plugin.probe(ctx)
 
     expect(refreshBody.scope).toContain("user:file_upload")
-  })
-
-  it("refreshes keychain credentials and writes back to keychain", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    ctx.host.keychain.readGenericPassword.mockReturnValue(
-      JSON.stringify({
-        claudeAiOauth: {
-          accessToken: "old-token",
-          refreshToken: "refresh",
-          expiresAt: Date.now() - 1000,
-          subscriptionType: "pro",
-        },
-      })
-    )
-
-    ctx.host.http.request.mockImplementation((opts) => {
-      if (String(opts.url).includes("/v1/oauth/token")) {
-        return {
-          status: 200,
-          bodyText: JSON.stringify({ access_token: "new-token", expires_in: 3600 }),
-        }
-      }
-      return {
-        status: 200,
-        bodyText: JSON.stringify({
-          five_hour: { utilization: 10, resets_at: "2099-01-01T00:00:00.000Z" },
-        }),
-      }
-    })
-
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).not.toThrow()
-    expect(ctx.host.keychain.writeGenericPassword).toHaveBeenCalled()
   })
 
   it("retries usage request after 401 by refreshing once", async () => {
@@ -1124,130 +852,6 @@ describe("claude plugin", () => {
     expect(() => plugin.probe(ctx)).toThrow("Token expired")
   })
 
-  it("logs when saving keychain credentials fails", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    ctx.host.keychain.readGenericPassword.mockReturnValue(
-      JSON.stringify({
-        claudeAiOauth: {
-          accessToken: "old-token",
-          refreshToken: "refresh",
-          expiresAt: Date.now() - 1000,
-        },
-      })
-    )
-    ctx.host.keychain.writeGenericPassword.mockImplementation(() => {
-      throw new Error("write fail")
-    })
-    ctx.host.http.request.mockImplementation((opts) => {
-      if (String(opts.url).includes("/v1/oauth/token")) {
-        return { status: 200, bodyText: JSON.stringify({ access_token: "new-token", expires_in: 3600 }) }
-      }
-      return {
-        status: 200,
-        bodyText: JSON.stringify({
-          five_hour: { utilization: 10, resets_at: "2099-01-01T00:00:00.000Z" },
-        }),
-      }
-    })
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).not.toThrow()
-    expect(ctx.host.log.error).toHaveBeenCalled()
-  })
-
-  it("writes refreshed credentials back to the current-user keychain source", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    ctx.host.keychain.readGenericPasswordForCurrentUser.mockReturnValue(
-      JSON.stringify({
-        claudeAiOauth: {
-          accessToken: "old-token",
-          refreshToken: "refresh",
-          expiresAt: Date.now() - 1000,
-        },
-      })
-    )
-    ctx.host.http.request.mockImplementation((opts) => {
-      if (String(opts.url).includes("/v1/oauth/token")) {
-        return { status: 200, bodyText: JSON.stringify({ access_token: "new-token", expires_in: 3600 }) }
-      }
-      return {
-        status: 200,
-        bodyText: JSON.stringify({
-          five_hour: { utilization: 10, resets_at: "2099-01-01T00:00:00.000Z" },
-        }),
-      }
-    })
-
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).not.toThrow()
-    expect(ctx.host.keychain.writeGenericPasswordForCurrentUser).toHaveBeenCalled()
-    expect(ctx.host.keychain.writeGenericPassword).not.toHaveBeenCalled()
-  })
-
-  it("writes refreshed credentials back to the legacy keychain source after fallback", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    ctx.host.keychain.readGenericPasswordForCurrentUser.mockImplementation(() => {
-      throw new Error("keychain item not found")
-    })
-    ctx.host.keychain.readGenericPassword.mockReturnValue(
-      JSON.stringify({
-        claudeAiOauth: {
-          accessToken: "old-token",
-          refreshToken: "refresh",
-          expiresAt: Date.now() - 1000,
-        },
-      })
-    )
-    ctx.host.http.request.mockImplementation((opts) => {
-      if (String(opts.url).includes("/v1/oauth/token")) {
-        return { status: 200, bodyText: JSON.stringify({ access_token: "new-token", expires_in: 3600 }) }
-      }
-      return {
-        status: 200,
-        bodyText: JSON.stringify({
-          five_hour: { utilization: 10, resets_at: "2099-01-01T00:00:00.000Z" },
-        }),
-      }
-    })
-
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).not.toThrow()
-    expect(ctx.host.keychain.writeGenericPassword).toHaveBeenCalled()
-    expect(ctx.host.keychain.writeGenericPasswordForCurrentUser).not.toHaveBeenCalled()
-  })
-
-  it("logs when saving credentials file fails", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => true
-    ctx.host.fs.readText = () =>
-      JSON.stringify({
-        claudeAiOauth: {
-          accessToken: "old-token",
-          refreshToken: "refresh",
-          expiresAt: Date.now() - 1000,
-        },
-      })
-    ctx.host.fs.writeText.mockImplementation(() => {
-      throw new Error("disk full")
-    })
-    ctx.host.http.request.mockImplementation((opts) => {
-      if (String(opts.url).includes("/v1/oauth/token")) {
-        return { status: 200, bodyText: JSON.stringify({ access_token: "new-token", expires_in: 3600 }) }
-      }
-      return {
-        status: 200,
-        bodyText: JSON.stringify({
-          five_hour: { utilization: 10, resets_at: "2099-01-01T00:00:00.000Z" },
-        }),
-      }
-    })
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).not.toThrow()
-    expect(ctx.host.log.error).toHaveBeenCalled()
-  })
-
   it("continues when refresh request throws non-string error (returns null)", async () => {
     const ctx = makeCtx()
     ctx.host.fs.exists = () => true
@@ -1274,35 +878,6 @@ describe("claude plugin", () => {
 
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).not.toThrow()
-  })
-
-  it("falls back to keychain when file oauth exists but has no access token", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => true
-    ctx.host.fs.readText = () => JSON.stringify({ claudeAiOauth: { refreshToken: "only-refresh" } })
-    ctx.host.keychain.readGenericPassword.mockReturnValue(
-      JSON.stringify({ claudeAiOauth: { accessToken: "keychain-token", subscriptionType: "pro" } })
-    )
-    ctx.host.http.request.mockReturnValue({
-      status: 200,
-      bodyText: JSON.stringify({
-        five_hour: { utilization: 10, resets_at: "2099-01-01T00:00:00.000Z" },
-      }),
-    })
-
-    const plugin = await loadPlugin()
-    const result = plugin.probe(ctx)
-    expect(result.lines.find((line) => line.label === "Session")).toBeTruthy()
-  })
-
-  it("treats keychain oauth without access token as not logged in", async () => {
-    const ctx = makeCtx()
-    ctx.host.fs.exists = () => false
-    ctx.host.keychain.readGenericPassword.mockReturnValue(
-      JSON.stringify({ claudeAiOauth: { refreshToken: "only-refresh" } })
-    )
-    const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).toThrow("Not logged in")
   })
 
   it("continues with existing token when refresh cannot return a usable token", async () => {

@@ -3,8 +3,6 @@
   const STATE_KEY = "kiro.kiroAgent"
   const LOGS_ROOT = "~/Library/Application Support/Kiro/logs"
   const LOG_FILE_NAME = "q-client.log"
-  const TOKEN_PATH = "~/.aws/sso/cache/kiro-auth-token.json"
-  const PROFILE_PATH = "~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent/profile.json"
   const REFRESH_URL = "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken"
   const LIVE_STALE_MS = 15 * 60 * 1000
   const REFRESH_BUFFER_MS = 10 * 60 * 1000
@@ -50,35 +48,38 @@
     }
     return token
   }
-  function readJsonFile(ctx, path, label) {
-    if (!ctx.host.fs.exists(path)) return null
-    try {
-      return ctx.util.tryParseJson(ctx.host.fs.readText(path))
-    } catch (e) {
-      ctx.host.log.warn(label + " read failed: " + String(e))
-      return null
-    }
+  function readString(value) {
+    return typeof value === "string" && value.trim() ? value.trim() : null
   }
   function loadAuthState(ctx) {
-    const parsed = readJsonFile(ctx, TOKEN_PATH, "auth token")
-    if (!parsed || typeof parsed !== "object") return null
-    const token = sanitizeAuth(parsed)
-    return token && (token.refreshToken || token.accessToken) ? { path: TOKEN_PATH, token } : null
-  }
-  function saveAuthState(ctx, authState) {
-    try {
-      ctx.host.fs.writeText(authState.path, JSON.stringify(authState.token, null, 2))
-      return true
-    } catch (e) {
-      ctx.host.log.warn("failed to persist refreshed Kiro auth: " + String(e))
-      return false
-    }
+    const credentials = ctx.credentials
+    if (!credentials || typeof credentials !== "object") return null
+    const token = sanitizeAuth({
+      accessToken: readString(credentials.accessToken || credentials.access_token),
+      refreshToken: readString(credentials.refreshToken || credentials.refresh_token),
+      expiresAt: readString(credentials.expiresAt || credentials.expires_at),
+      authMethod: readString(credentials.authMethod || credentials.auth_method),
+      provider: readString(credentials.provider),
+      profileArn: readString(credentials.profileArn || credentials.profile_arn),
+    })
+    return token && (token.refreshToken || token.accessToken) ? { token } : null
   }
   function loadProfileArn(ctx, authState) {
     const fromToken = authState && authState.token && authState.token.profileArn
     if (typeof fromToken === "string" && fromToken) return fromToken
-    const parsed = readJsonFile(ctx, PROFILE_PATH, "profile")
-    return parsed && typeof parsed.arn === "string" && parsed.arn.trim() ? parsed.arn.trim() : null
+    return null
+  }
+  function credentialsJson(authState) {
+    const token = (authState && authState.token) || {}
+    return JSON.stringify({
+      type: "oauth",
+      accessToken: token.accessToken || "",
+      refreshToken: token.refreshToken || "",
+      expiresAt: token.expiresAt || "",
+      authMethod: token.authMethod || "",
+      provider: token.provider || "",
+      profileArn: token.profileArn || "",
+    })
   }
   function regionFromArn(profileArn) {
     const parts = String(profileArn || "").split(":")
@@ -250,7 +251,6 @@
       profileArn: typeof json.profileArn === "string" && json.profileArn ? json.profileArn : authState.token.profileArn,
       expiresAt: expiresIn !== null && expiresIn > 0 ? new Date(nowMs + expiresIn * 1000).toISOString() : authState.token.expiresAt,
     })
-    saveAuthState(ctx, authState)
     return authState.token.accessToken
   }
   function fetchLiveState(ctx, authState, nowMs) {
@@ -337,7 +337,7 @@
     const hours = Math.floor(minutes / 60)
     return hours < 48 ? hours + "h ago" : Math.floor(hours / 24) + "d ago"
   }
-  function buildOutput(ctx, snapshot, nowMs) {
+  function buildOutput(ctx, snapshot, authState) {
     const primary = pickPrimaryBreakdown(snapshot.usageBreakdowns)
     if (!primary) throw DATA_HINT
     const lines = [ctx.line.progress({ label: "Credits", used: primary.currentUsage, limit: primary.usageLimit, format: COUNT_FORMAT, resetsAt: primary.resetDate || undefined })]
@@ -354,7 +354,7 @@
       )
     }
     if (snapshot.overageEnabled !== null) lines.push(ctx.line.badge({ label: "Overages", text: snapshot.overageEnabled ? "Enabled" : "Disabled" }))
-    return { plan: snapshot.plan || undefined, lines }
+    return { plan: snapshot.plan || undefined, lines, updatedCredentialsJson: credentialsJson(authState) }
   }
   function probe(ctx) {
     const nowMs = ctx.util.parseDateMs(ctx.nowIso) || Date.now()
@@ -377,7 +377,7 @@
       if (typeof liveError === "string" && liveError) throw liveError
       throw DATA_HINT
     }
-    return buildOutput(ctx, snapshot, nowMs)
+    return buildOutput(ctx, snapshot, authState)
   }
   globalThis.__openusage_plugin = { id: "kiro", probe }
 })()

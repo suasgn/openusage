@@ -1,6 +1,6 @@
 import crypto from "node:crypto"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { makeCtx } from "../test-helpers.js"
+import { makeCtx as makeBaseCtx } from "../test-helpers.js"
 
 const loadPlugin = async () => {
   await import("./plugin.js")
@@ -27,6 +27,24 @@ function makeEncryptedAuthV2(payload) {
   }
 }
 
+function setFactoryCredentials(ctx, opts = {}) {
+  const hasAccessToken = Object.prototype.hasOwnProperty.call(opts, "accessToken")
+  const hasRefreshToken = Object.prototype.hasOwnProperty.call(opts, "refreshToken")
+  ctx.credentials = {
+    type: "oauth",
+    accessToken: hasAccessToken
+      ? opts.accessToken
+      : makeJwt(Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60),
+    refreshToken: hasRefreshToken ? opts.refreshToken : "refresh",
+  }
+}
+
+function makeCtx() {
+  const ctx = makeBaseCtx()
+  setFactoryCredentials(ctx)
+  return ctx
+}
+
 describe("factory plugin", () => {
   beforeEach(() => {
     delete globalThis.__openusage_plugin
@@ -35,22 +53,23 @@ describe("factory plugin", () => {
 
   it("throws when auth missing", async () => {
     const ctx = makeCtx()
+    ctx.credentials = null
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
   })
 
-  it("throws when auth json is invalid", async () => {
+  it("throws when account credentials are invalid", async () => {
     const ctx = makeCtx()
-    ctx.host.fs.writeText("~/.factory/auth.json", "{bad")
+    ctx.credentials = "bad"
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
   })
 
-  it("throws when auth lacks access_token", async () => {
+  it("throws when account credentials lack access_token", async () => {
     const ctx = makeCtx()
-    ctx.host.fs.writeText("~/.factory/auth.json", JSON.stringify({ refresh_token: "refresh" }))
+    setFactoryCredentials(ctx, { accessToken: "", refreshToken: "refresh" })
     const plugin = await loadPlugin()
-    expect(() => plugin.probe(ctx)).toThrow("Invalid auth file")
+    expect(() => plugin.probe(ctx)).toThrow("Invalid auth credentials")
   })
 
   it("loads auth from auth.encrypted when auth.json is missing", async () => {
@@ -229,6 +248,7 @@ describe("factory plugin", () => {
 
   it("throws not logged in when auth.v2.file exists without its key", async () => {
     const ctx = makeCtx()
+    ctx.credentials = null
     const authV2 = makeEncryptedAuthV2({
       access_token: makeJwt(Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60),
       refresh_token: "refresh",
@@ -239,16 +259,12 @@ describe("factory plugin", () => {
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")
   })
 
-  it("persists refreshed v2 auth back to auth.v2.file", async () => {
+  it("refreshes account credentials and returns updated credentials", async () => {
     const ctx = makeCtx()
     const nearExp = Math.floor(Date.now() / 1000) + 12 * 60 * 60
     const futureExp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
-    const authV2 = makeEncryptedAuthV2({
-      access_token: makeJwt(nearExp),
-      refresh_token: "refresh",
-    })
-    ctx.host.fs.writeText("~/.factory/auth.v2.file", authV2.envelope)
-    ctx.host.fs.writeText("~/.factory/auth.v2.key", authV2.keyB64)
+    const refreshedAccessToken = makeJwt(futureExp)
+    setFactoryCredentials(ctx, { accessToken: makeJwt(nearExp), refreshToken: "refresh" })
     ctx.host.fs.writeText.mockClear()
 
     ctx.host.http.request.mockImplementation((opts) => {
@@ -278,14 +294,10 @@ describe("factory plugin", () => {
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
     expect(result.lines.find((line) => line.label === "Standard")).toBeTruthy()
-    expect(ctx.host.fs.writeText).toHaveBeenCalledTimes(1)
-    expect(ctx.host.fs.writeText).toHaveBeenCalledWith("~/.factory/auth.v2.file", expect.any(String))
-
-    const persistedEnvelope = ctx.host.fs.readText("~/.factory/auth.v2.file")
-    const persistedRaw = ctx.host.crypto.decryptAes256Gcm(persistedEnvelope, authV2.keyB64)
-    const persisted = JSON.parse(persistedRaw)
-    expect(persisted.refresh_token).toBe("new-refresh")
-    expect(persisted.access_token).toBe(makeJwt(futureExp))
+    expect(ctx.host.fs.writeText).not.toHaveBeenCalled()
+    const updated = JSON.parse(result.updatedCredentialsJson)
+    expect(updated.refreshToken).toBe("new-refresh")
+    expect(updated.accessToken).toBe(refreshedAccessToken)
   })
 
   it("prefers auth.encrypted over stale auth.json when both exist", async () => {
@@ -324,7 +336,7 @@ describe("factory plugin", () => {
     )
   })
 
-  it("loads auth from keychain when auth files are missing", async () => {
+  it("uses account credentials imported from keychain", async () => {
     const ctx = makeCtx()
     const futureExp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
     ctx.host.keychain.readGenericPassword.mockImplementation((service) => {
@@ -352,7 +364,7 @@ describe("factory plugin", () => {
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
     expect(result.lines.find((line) => line.label === "Standard")).toBeTruthy()
-    expect(ctx.host.keychain.readGenericPassword).toHaveBeenCalledWith("Factory Token")
+    expect(ctx.host.keychain.readGenericPassword).not.toHaveBeenCalled()
   })
 
   it("loads auth from keychain when payload is hex-encoded JSON", async () => {
@@ -385,7 +397,7 @@ describe("factory plugin", () => {
     expect(result.lines.find((line) => line.label === "Standard")).toBeTruthy()
   })
 
-  it("skips invalid keychain payload and tries next service", async () => {
+  it("uses selected account credentials instead of probing keychain services", async () => {
     const ctx = makeCtx()
     const futureExp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
     ctx.host.keychain.readGenericPassword.mockImplementation((service) => {
@@ -414,23 +426,14 @@ describe("factory plugin", () => {
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
     expect(result.lines.find((line) => line.label === "Standard")).toBeTruthy()
-    expect(ctx.host.keychain.readGenericPassword).toHaveBeenCalledWith("Factory Token")
-    expect(ctx.host.keychain.readGenericPassword).toHaveBeenCalledWith("Factory token")
+    expect(ctx.host.keychain.readGenericPassword).not.toHaveBeenCalled()
   })
 
-  it("refreshes keychain auth and writes back to keychain", async () => {
+  it("refreshes keychain-imported account credentials", async () => {
     const ctx = makeCtx()
     const nearExp = Math.floor(Date.now() / 1000) + 12 * 60 * 60 // force proactive refresh
     const futureExp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
-    ctx.host.keychain.readGenericPassword.mockImplementation((service) => {
-      if (service === "Factory Token") {
-        return JSON.stringify({
-          access_token: makeJwt(nearExp),
-          refresh_token: "refresh",
-        })
-      }
-      return null
-    })
+    setFactoryCredentials(ctx, { accessToken: makeJwt(nearExp), refreshToken: "refresh" })
 
     ctx.host.http.request.mockImplementation((opts) => {
       if (String(opts.url).includes("workos.com")) {
@@ -457,12 +460,10 @@ describe("factory plugin", () => {
     })
 
     const plugin = await loadPlugin()
-    plugin.probe(ctx)
-    expect(ctx.host.keychain.writeGenericPassword).toHaveBeenCalledTimes(1)
-    const [service, writtenPayload] = ctx.host.keychain.writeGenericPassword.mock.calls[0]
-    expect(service).toBe("Factory Token")
-    const parsed = JSON.parse(writtenPayload)
-    expect(parsed.refresh_token).toBe("new-refresh")
+    const result = plugin.probe(ctx)
+    const updated = JSON.parse(result.updatedCredentialsJson)
+    expect(updated.refreshToken).toBe("new-refresh")
+    expect(ctx.host.keychain.writeGenericPassword).not.toHaveBeenCalled()
   })
 
   it("fetches usage and formats standard tokens", async () => {
@@ -576,10 +577,7 @@ describe("factory plugin", () => {
     // Token expires in 12 hours (within 24h threshold, needs refresh)
     const nearExp = Math.floor(Date.now() / 1000) + 12 * 60 * 60
     const futureExp = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
-    ctx.host.fs.writeText("~/.factory/auth.json", JSON.stringify({
-      access_token: makeJwt(nearExp),
-      refresh_token: "refresh",
-    }))
+    setFactoryCredentials(ctx, { accessToken: makeJwt(nearExp), refreshToken: "refresh" })
 
     let refreshCalled = false
     ctx.host.http.request.mockImplementation((opts) => {
@@ -610,11 +608,12 @@ describe("factory plugin", () => {
     })
 
     const plugin = await loadPlugin()
-    plugin.probe(ctx)
+    const result = plugin.probe(ctx)
 
     expect(refreshCalled).toBe(true)
-    // Verify auth file was updated
-    expect(ctx.host.fs.writeText).toHaveBeenCalled()
+    const updated = JSON.parse(result.updatedCredentialsJson)
+    expect(updated.refreshToken).toBe("new-refresh")
+    expect(ctx.host.fs.writeText).not.toHaveBeenCalled()
   })
 
   it("falls back to existing token when proactive refresh throws", async () => {
@@ -652,10 +651,7 @@ describe("factory plugin", () => {
     const ctx = makeCtx()
     const nearExp = Math.floor(Date.now() / 1000) + 12 * 60 * 60
     const currentToken = makeJwt(nearExp)
-    ctx.host.fs.writeText("~/.factory/auth.json", JSON.stringify({
-      access_token: currentToken,
-      refresh_token: "refresh",
-    }))
+    setFactoryCredentials(ctx, { accessToken: currentToken, refreshToken: "refresh" })
 
     let usageSawCurrentToken = false
     ctx.host.http.request.mockImplementation((opts) => {
@@ -1071,6 +1067,7 @@ describe("factory plugin", () => {
 
   it("throws when keychain API is unavailable and files are missing", async () => {
     const ctx = makeCtx()
+    ctx.credentials = null
     ctx.host.keychain = null
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Not logged in")

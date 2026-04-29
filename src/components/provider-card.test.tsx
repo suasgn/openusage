@@ -110,6 +110,47 @@ describe("ProviderCard", () => {
     expect(screen.getByText("342 credits")).toBeInTheDocument()
   })
 
+  it("groups account-scoped lines and sorts them by account order", () => {
+    const { container } = render(
+      <ProviderCard
+        name="Accounts"
+        displayMode="used"
+        accountOrder={["acc-2", "acc-1"]}
+        lines={[
+          { type: "progress", label: "Work @@ acc-1 :: Usage", used: 20, limit: 100, format: { kind: "percent" } },
+          { type: "progress", label: "Personal @@ acc-2 :: Usage", used: 40, limit: 100, format: { kind: "percent" } },
+        ]}
+      />
+    )
+
+    expect(screen.getByText("Work")).toBeInTheDocument()
+    expect(screen.getByText("Personal")).toBeInTheDocument()
+    expect(screen.getByText("Account ID: acc-1")).toBeInTheDocument()
+    expect(screen.queryByText(/@@/)).not.toBeInTheDocument()
+
+    const text = container.textContent ?? ""
+    expect(text.indexOf("Personal")).toBeLessThan(text.indexOf("Work"))
+  })
+
+  it("shows account plan badges and scoped errors with account context", () => {
+    render(
+      <ProviderCard
+        name="Accounts"
+        displayMode="used"
+        lines={[
+          { type: "badge", label: "Work @@ acc-1 :: Plan", text: "Pro" },
+          { type: "progress", label: "Work @@ acc-1 :: Usage", used: 20, limit: 100, format: { kind: "percent" } },
+          { type: "badge", label: "Personal @@ acc-2 :: Error", text: "No credentials" },
+        ]}
+      />
+    )
+
+    expect(screen.getByText("Work")).toBeInTheDocument()
+    expect(screen.getByText("Pro")).toBeInTheDocument()
+    expect(screen.getByText("Personal")).toBeInTheDocument()
+    expect(screen.getByText("No credentials")).toBeInTheDocument()
+  })
+
   it("renders quick links and opens URL", async () => {
     render(
       <ProviderCard

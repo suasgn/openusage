@@ -6,6 +6,54 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#000000",
+  "auth": {
+    "defaultStrategyId": "oauth",
+    "strategies": [
+      {
+        "id": "oauth",
+        "label": "OAuth Credentials",
+        "kind": "json",
+        "fields": [
+          { "name": "access_token", "label": "Access Token", "secret": true },
+          { "name": "refresh_token", "label": "Refresh Token", "secret": true },
+          { "name": "expires_at", "label": "Expires At" }
+        ],
+        "credentialTemplate": { "access_token": "", "refresh_token": "", "expires_at": 0 },
+        "importSources": [
+          {
+            "id": "credentials-file-access-token",
+            "kind": "fileJson",
+            "paths": [{ "path": "~/.kimi/credentials/kimi-code.json" }],
+            "json": {
+              "constants": { "type": "oauth" },
+              "fields": [
+                { "target": "access_token", "pointer": "/access_token", "required": true, "normalize": "trim" },
+                { "target": "refresh_token", "pointer": "/refresh_token", "normalize": "trim" },
+                { "target": "expires_at", "pointer": "/expires_at", "normalize": "epochSeconds" },
+                { "target": "scope", "pointer": "/scope", "normalize": "trim" },
+                { "target": "token_type", "pointer": "/token_type", "normalize": "trim" }
+              ]
+            }
+          },
+          {
+            "id": "credentials-file-refresh-token",
+            "kind": "fileJson",
+            "paths": [{ "path": "~/.kimi/credentials/kimi-code.json" }],
+            "json": {
+              "constants": { "type": "oauth" },
+              "fields": [
+                { "target": "refresh_token", "pointer": "/refresh_token", "required": true, "normalize": "trim" },
+                { "target": "access_token", "pointer": "/access_token", "normalize": "trim" },
+                { "target": "expires_at", "pointer": "/expires_at", "normalize": "epochSeconds" },
+                { "target": "scope", "pointer": "/scope", "normalize": "trim" },
+                { "target": "token_type", "pointer": "/token_type", "normalize": "trim" }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
   "lines": [
     { "type": "progress", "label": "Session", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Weekly", "scope": "overview", "primaryOrder": 2 }

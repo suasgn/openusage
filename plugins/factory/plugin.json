@@ -6,6 +6,77 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#020202",
+  "auth": {
+    "defaultStrategyId": "oauth",
+    "strategies": [
+      {
+        "id": "oauth",
+        "label": "OAuth",
+        "kind": "json",
+        "fields": [
+          { "name": "accessToken", "label": "Access Token", "secret": true, "required": true },
+          { "name": "refreshToken", "label": "Refresh Token", "secret": true }
+        ],
+        "credentialTemplate": { "type": "oauth", "accessToken": "", "refreshToken": "" },
+        "importSources": [
+          {
+            "id": "auth-v2-file",
+            "kind": "encryptedFileJson",
+            "paths": [{ "path": "~/.factory/auth.v2.file" }],
+            "keyPaths": [{ "path": "~/.factory/auth.v2.key" }],
+            "json": {
+              "constants": { "type": "oauth", "source": "auth-v2-file" },
+              "fields": [
+                { "target": "accessToken", "pointers": ["/access_token", "/accessToken", "/tokens/access_token", "/tokens/accessToken"], "required": true, "normalize": "trim" },
+                { "target": "refreshToken", "pointers": ["/refresh_token", "/refreshToken", "/tokens/refresh_token", "/tokens/refreshToken"], "normalize": "trim" }
+              ]
+            }
+          },
+          {
+            "id": "auth-encrypted-file",
+            "kind": "fileJson",
+            "paths": [{ "path": "~/.factory/auth.encrypted" }],
+            "json": {
+              "constants": { "type": "oauth", "source": "auth-encrypted-file" },
+              "fields": [
+                { "target": "accessToken", "pointers": ["/access_token", "/accessToken", "/tokens/access_token", "/tokens/accessToken"], "required": true, "normalize": "trim" },
+                { "target": "refreshToken", "pointers": ["/refresh_token", "/refreshToken", "/tokens/refresh_token", "/tokens/refreshToken"], "normalize": "trim" }
+              ]
+            }
+          },
+          {
+            "id": "auth-json-file",
+            "kind": "fileJson",
+            "paths": [{ "path": "~/.factory/auth.json" }],
+            "json": {
+              "constants": { "type": "oauth", "source": "auth-json-file" },
+              "fields": [
+                { "target": "accessToken", "pointers": ["/access_token", "/accessToken", "/tokens/access_token", "/tokens/accessToken"], "required": true, "normalize": "trim" },
+                { "target": "refreshToken", "pointers": ["/refresh_token", "/refreshToken", "/tokens/refresh_token", "/tokens/refreshToken"], "normalize": "trim" }
+              ]
+            }
+          },
+          {
+            "id": "factory-keychain",
+            "kind": "keychainJson",
+            "services": [
+              { "service": "Factory Token" },
+              { "service": "Factory token" },
+              { "service": "Factory Auth" },
+              { "service": "Droid Auth" }
+            ],
+            "json": {
+              "constants": { "type": "oauth", "source": "keychain" },
+              "fields": [
+                { "target": "accessToken", "pointers": ["/access_token", "/accessToken", "/tokens/access_token", "/tokens/accessToken"], "required": true, "normalize": "trim" },
+                { "target": "refreshToken", "pointers": ["/refresh_token", "/refreshToken", "/tokens/refresh_token", "/tokens/refreshToken"], "normalize": "trim" }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
   "lines": [
     { "type": "progress", "label": "Standard", "scope": "overview", "primaryOrder": 1 },
     { "type": "progress", "label": "Premium", "scope": "detail" }

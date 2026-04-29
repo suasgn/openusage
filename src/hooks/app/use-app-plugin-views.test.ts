@@ -16,7 +16,7 @@ function createPluginMeta(id: string, name: string): PluginMeta {
 }
 
 describe("useAppPluginViews", () => {
-  it("derives display and nav plugins from settings order", () => {
+  it("derives display and nav plugins from enabled settings order", () => {
     const pluginSettings: PluginSettings = {
       order: ["codex", "cursor"],
       disabled: ["cursor"],
@@ -57,11 +57,11 @@ describe("useAppPluginViews", () => {
     ])
   })
 
-  it("falls back to home when active provider becomes disabled", async () => {
+  it("falls back to home when active provider is removed from order", async () => {
     const setActiveView = vi.fn()
     const pluginSettings: PluginSettings = {
-      order: ["codex"],
-      disabled: ["codex"],
+      order: [],
+      disabled: [],
     }
 
     renderHook(() =>
@@ -98,8 +98,8 @@ describe("useAppPluginViews", () => {
 
     rerender({
       pluginSettings: {
-        order: ["codex"],
-        disabled: ["codex"],
+        order: [],
+        disabled: [],
       },
     })
 

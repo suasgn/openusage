@@ -1,6 +1,5 @@
 (function () {
   const PROVIDER_ID = "opencode-go";
-  const AUTH_PATH = "~/.local/share/opencode/auth.json";
   const DB_PATH = "~/.local/share/opencode/opencode.db";
   const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
   const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -160,23 +159,10 @@
   }
 
   function loadAuthKey(ctx) {
-    if (!ctx.host.fs.exists(AUTH_PATH)) return null;
-
-    try {
-      const text = ctx.host.fs.readText(AUTH_PATH);
-      const parsed = ctx.util.tryParseJson(text);
-      if (!parsed || typeof parsed !== "object") {
-        ctx.host.log.warn("opencode auth file is not valid json");
-        return null;
-      }
-      const entry = parsed[PROVIDER_ID];
-      if (!entry || typeof entry !== "object") return null;
-      const key = typeof entry.key === "string" ? entry.key.trim() : "";
-      return key || null;
-    } catch (e) {
-      ctx.host.log.warn("opencode auth read failed: " + String(e));
-      return null;
-    }
+    const credentials = ctx.credentials;
+    if (!credentials || typeof credentials !== "object") return null;
+    const key = credentials.apiKey || credentials.key || credentials.accessToken;
+    return typeof key === "string" && key.trim() ? key.trim() : null;
   }
 
   function hasHistory(ctx) {

@@ -1,7 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { makeCtx } from "../test-helpers.js"
+import { makeCtx as makeBaseCtx } from "../test-helpers.js"
 
 const CRED_PATH = "~/.kimi/credentials/kimi-code.json"
+
+const makeCtx = () => {
+  const ctx = makeBaseCtx()
+  const writeText = ctx.host.fs.writeText
+  const readText = ctx.host.fs.readText
+  ctx.host.fs.writeText = vi.fn((path, text) => {
+    writeText(path, text)
+    if (path === CRED_PATH) {
+      ctx.credentials = ctx.util.tryParseJson(text) ?? text
+    }
+  })
+  ctx.host.fs.readText = (path) => {
+    if (path === CRED_PATH && ctx.credentials && typeof ctx.credentials === "object") {
+      return JSON.stringify(ctx.credentials)
+    }
+    return readText(path)
+  }
+  return ctx
+}
 
 const loadPlugin = async () => {
   await import("./plugin.js")
@@ -83,6 +102,9 @@ describe("kimi plugin", () => {
     const persisted = JSON.parse(ctx.host.fs.readText(CRED_PATH))
     expect(persisted.access_token).toBe("new-token")
     expect(persisted.refresh_token).toBe("new-refresh")
+    const updatedCredentials = JSON.parse(result.updatedCredentialsJson)
+    expect(updatedCredentials.access_token).toBe("new-token")
+    expect(updatedCredentials.refresh_token).toBe("new-refresh")
   })
 
   it("retries usage once on 401 by refreshing token", async () => {

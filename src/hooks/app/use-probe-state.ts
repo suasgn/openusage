@@ -60,20 +60,20 @@ export function useProbeState({ onProbeResult }: UseProbeStateArgs) {
   const handleProbeResult = useCallback(
     (output: PluginOutput) => {
       const errorMessage = getErrorMessage(output)
-      const isManual = manualRefreshIdsRef.current.has(output.providerId)
+      const isManual = manualRefreshIdsRef.current.has(output.pluginId)
       if (isManual) {
-        manualRefreshIdsRef.current.delete(output.providerId)
+        manualRefreshIdsRef.current.delete(output.pluginId)
       }
 
       setPluginStates((prev) => ({
         ...prev,
-        [output.providerId]: {
+        [output.pluginId]: {
           data: errorMessage ? null : output,
           loading: false,
           error: errorMessage,
           lastManualRefreshAt: !errorMessage && isManual
             ? Date.now()
-            : prev[output.providerId]?.lastManualRefreshAt ?? null,
+            : prev[output.pluginId]?.lastManualRefreshAt ?? null,
         },
       }))
 

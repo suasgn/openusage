@@ -1,10 +1,19 @@
+mod account_auth;
+mod account_import;
+mod account_store;
 #[cfg(target_os = "macos")]
 mod app_nap;
+mod auth;
 mod config;
+mod error;
 mod local_http_api;
+mod models;
+mod oauth;
 mod panel;
 mod plugin_engine;
+mod secrets;
 mod tray;
+mod utils;
 #[cfg(target_os = "macos")]
 mod webkit_config;
 
@@ -14,7 +23,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::Serialize;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tauri_plugin_aptabase::EventTracker;
 use tauri_plugin_log::{Target, TargetKind};
 use uuid::Uuid;
@@ -147,9 +156,27 @@ pub struct PluginMeta {
     pub brand_color: Option<String>,
     pub lines: Vec<ManifestLineDto>,
     pub links: Vec<PluginLinkDto>,
+    pub auth: Option<PluginAuthDto>,
     /// Ordered list of primary metric candidates (sorted by primaryOrder).
     /// Frontend picks the first one that exists in runtime data.
     pub primary_candidates: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginAuthDto {
+    pub default_strategy_id: Option<String>,
+    pub strategies: Vec<AuthStrategyDto>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthStrategyDto {
+    pub id: String,
+    pub label: String,
+    pub kind: plugin_engine::manifest::AuthStrategyKind,
+    pub fields: Vec<plugin_engine::manifest::AuthCredentialField>,
+    pub credential_template: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -212,10 +239,279 @@ fn open_devtools(#[allow(unused)] app_handle: tauri::AppHandle) {
     }
 }
 
+fn plugin_error_output(
+    plugin: &plugin_engine::manifest::LoadedPlugin,
+    message: impl Into<String>,
+) -> plugin_engine::runtime::PluginOutput {
+    plugin_engine::runtime::PluginOutput {
+        plugin_id: plugin.manifest.id.clone(),
+        display_name: plugin.manifest.name.clone(),
+        plan: None,
+        lines: vec![plugin_engine::runtime::MetricLine::Badge {
+            label: "Error".to_string(),
+            text: message.into(),
+            color: Some("#ef4444".to_string()),
+            subtitle: None,
+        }],
+        icon_url: plugin.icon_data_url.clone(),
+        updated_credentials: None,
+    }
+}
+
+fn is_error_output(output: &plugin_engine::runtime::PluginOutput) -> bool {
+    output.lines.iter().any(|line| {
+        matches!(line, plugin_engine::runtime::MetricLine::Badge { label, .. } if label == "Error")
+    })
+}
+
+fn account_label(account: &models::AccountRecord) -> String {
+    let trimmed = account.label.trim();
+    if !trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+    let short_id = account.id.chars().take(8).collect::<String>();
+    if short_id.is_empty() {
+        "Account".to_string()
+    } else {
+        format!("Account {short_id}")
+    }
+}
+
+fn scoped_account_label(account: &models::AccountRecord, metric_label: &str) -> String {
+    format!(
+        "{} @@ {} :: {}",
+        account_label(account),
+        account.id,
+        metric_label
+    )
+}
+
+fn prefix_metric_line(
+    line: plugin_engine::runtime::MetricLine,
+    account: &models::AccountRecord,
+) -> plugin_engine::runtime::MetricLine {
+    match line {
+        plugin_engine::runtime::MetricLine::Text {
+            label,
+            value,
+            color,
+            subtitle,
+        } => plugin_engine::runtime::MetricLine::Text {
+            label: scoped_account_label(account, &label),
+            value,
+            color,
+            subtitle,
+        },
+        plugin_engine::runtime::MetricLine::Progress {
+            label,
+            used,
+            limit,
+            format,
+            resets_at,
+            period_duration_ms,
+            color,
+        } => plugin_engine::runtime::MetricLine::Progress {
+            label: scoped_account_label(account, &label),
+            used,
+            limit,
+            format,
+            resets_at,
+            period_duration_ms,
+            color,
+        },
+        plugin_engine::runtime::MetricLine::Badge {
+            label,
+            text,
+            color,
+            subtitle,
+        } => plugin_engine::runtime::MetricLine::Badge {
+            label: scoped_account_label(account, &label),
+            text,
+            color,
+            subtitle,
+        },
+    }
+}
+
+fn aggregate_account_outputs(
+    plugin: &plugin_engine::manifest::LoadedPlugin,
+    outputs: Vec<(models::AccountRecord, plugin_engine::runtime::PluginOutput)>,
+) -> plugin_engine::runtime::PluginOutput {
+    if outputs.len() == 1 {
+        return outputs.into_iter().next().expect("one output").1;
+    }
+
+    let mut lines = Vec::new();
+    for (account, output) in outputs {
+        if let Some(plan) = output
+            .plan
+            .as_ref()
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        {
+            lines.push(plugin_engine::runtime::MetricLine::Badge {
+                label: scoped_account_label(&account, "Plan"),
+                text: plan.to_string(),
+                color: None,
+                subtitle: None,
+            });
+        }
+        for line in output.lines {
+            lines.push(prefix_metric_line(line, &account));
+        }
+    }
+
+    if lines.is_empty() {
+        lines.push(plugin_engine::runtime::MetricLine::Badge {
+            label: "Status".to_string(),
+            text: "No usage data".to_string(),
+            color: Some("#a3a3a3".to_string()),
+            subtitle: None,
+        });
+    }
+
+    plugin_engine::runtime::PluginOutput {
+        plugin_id: plugin.manifest.id.clone(),
+        display_name: plugin.manifest.name.clone(),
+        plan: None,
+        lines,
+        icon_url: plugin.icon_data_url.clone(),
+        updated_credentials: None,
+    }
+}
+
+fn run_plugin_probe_with_accounts(
+    app_handle: &tauri::AppHandle,
+    plugin: &plugin_engine::manifest::LoadedPlugin,
+    app_data_dir: &PathBuf,
+    app_version: &str,
+) -> plugin_engine::runtime::PluginOutput {
+    let Some(_auth) = plugin.manifest.auth.as_ref() else {
+        return plugin_engine::runtime::run_probe(plugin, app_data_dir, app_version, None, None);
+    };
+
+    let store = app_handle.state::<account_store::AccountStore>();
+    let accounts = match store.list_accounts() {
+        Ok(accounts) => accounts
+            .into_iter()
+            .filter(|account| account.plugin_id == plugin.manifest.id && account.enabled)
+            .collect::<Vec<_>>(),
+        Err(err) => return plugin_error_output(plugin, err.to_string()),
+    };
+
+    if accounts.is_empty() {
+        return plugin_error_output(
+            plugin,
+            format!("No {} account configured", plugin.manifest.name),
+        );
+    }
+
+    let mut outputs = Vec::new();
+    let mut saw_credentials = false;
+    for account in accounts {
+        let credentials =
+            match secrets::get_account_credentials(app_handle, store.inner(), &account.id) {
+                Ok(Some(credentials)) => {
+                    saw_credentials = true;
+                    credentials
+                }
+                Ok(None) => {
+                    match account_import::import_account_credentials(plugin, &account, app_data_dir)
+                    {
+                        Ok(Some(credentials)) => {
+                            saw_credentials = true;
+                            if let Err(err) = secrets::set_account_credentials(
+                                app_handle,
+                                store.inner(),
+                                &account.id,
+                                &credentials,
+                            ) {
+                                let _ = store.record_probe_error(&account.id, &err.to_string());
+                                let output = plugin_error_output(plugin, err.to_string());
+                                outputs.push((account, output));
+                                continue;
+                            }
+                            credentials
+                        }
+                        Ok(None) => continue,
+                        Err(err) => {
+                            let _ = store.record_probe_error(&account.id, &err.to_string());
+                            let output = plugin_error_output(plugin, err.to_string());
+                            outputs.push((account, output));
+                            continue;
+                        }
+                    }
+                }
+                Err(err) => {
+                    let _ = store.record_probe_error(&account.id, &err.to_string());
+                    let output = plugin_error_output(plugin, err.to_string());
+                    outputs.push((account, output));
+                    continue;
+                }
+            };
+
+        let account_ctx = plugin_engine::runtime::ProbeAccountContext {
+            id: account.id.clone(),
+            label: account.label.clone(),
+            settings: account.settings.clone(),
+        };
+        let output = plugin_engine::runtime::run_probe(
+            plugin,
+            app_data_dir,
+            app_version,
+            Some(account_ctx),
+            Some(credentials),
+        );
+        if is_error_output(&output) {
+            let message = output
+                .lines
+                .iter()
+                .find_map(|line| match line {
+                    plugin_engine::runtime::MetricLine::Badge { label, text, .. }
+                        if label == "Error" =>
+                    {
+                        Some(text.clone())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| "probe failed".to_string());
+            let _ = store.record_probe_error(&account.id, &message);
+        } else {
+            if let Some(updated_credentials) = output.updated_credentials.as_ref() {
+                let _ = secrets::set_account_credentials(
+                    app_handle,
+                    store.inner(),
+                    &account.id,
+                    updated_credentials,
+                );
+            }
+            let _ = store.record_probe_success(&account.id);
+        }
+        outputs.push((account, output));
+    }
+
+    if outputs.is_empty() {
+        if saw_credentials {
+            plugin_error_output(
+                plugin,
+                format!("Failed to fetch {} usage", plugin.manifest.name),
+            )
+        } else {
+            plugin_error_output(
+                plugin,
+                format!("No credentials configured for {}", plugin.manifest.name),
+            )
+        }
+    } else {
+        aggregate_account_outputs(plugin, outputs)
+    }
+}
+
 #[tauri::command]
 async fn start_probe_batch(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, Mutex<AppState>>,
+    _store: tauri::State<'_, account_store::AccountStore>,
     batch_id: Option<String>,
     plugin_ids: Option<Vec<String>>,
 ) -> Result<ProbeBatchStarted, String> {
@@ -294,8 +590,9 @@ async fn start_probe_batch(
 
         tauri::async_runtime::spawn_blocking(move || {
             let plugin_id = plugin.manifest.id.clone();
+            let probe_handle = handle.clone();
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                plugin_engine::runtime::run_probe(&plugin, &data_dir, &version)
+                run_plugin_probe_with_accounts(&probe_handle, &plugin, &data_dir, &version)
             }));
 
             match result {
@@ -435,6 +732,21 @@ fn list_plugins(state: tauri::State<'_, Mutex<AppState>>) -> Vec<PluginMeta> {
             let primary_candidates: Vec<String> =
                 candidates.iter().map(|line| line.label.clone()).collect();
 
+            let auth = plugin.manifest.auth.as_ref().map(|auth| PluginAuthDto {
+                default_strategy_id: auth.default_strategy_id.clone(),
+                strategies: auth
+                    .strategies
+                    .iter()
+                    .map(|strategy| AuthStrategyDto {
+                        id: strategy.id.clone(),
+                        label: strategy.label.clone(),
+                        kind: strategy.kind.clone(),
+                        fields: strategy.fields.clone(),
+                        credential_template: strategy.credential_template.clone(),
+                    })
+                    .collect(),
+            });
+
             PluginMeta {
                 id: plugin.manifest.id,
                 name: plugin.manifest.name,
@@ -459,10 +771,179 @@ fn list_plugins(state: tauri::State<'_, Mutex<AppState>>) -> Vec<PluginMeta> {
                         url: link.url.clone(),
                     })
                     .collect(),
+                auth,
                 primary_candidates,
             }
         })
         .collect()
+}
+
+fn find_loaded_plugin(
+    state: &tauri::State<'_, Mutex<AppState>>,
+    plugin_id: &str,
+) -> Result<plugin_engine::manifest::LoadedPlugin, String> {
+    let plugin_id = plugin_id.trim().to_ascii_lowercase();
+    if plugin_id.is_empty() {
+        return Err("pluginId is required".to_string());
+    }
+    let locked = state.lock().map_err(|e| e.to_string())?;
+    locked
+        .plugins
+        .iter()
+        .find(|plugin| plugin.manifest.id == plugin_id)
+        .cloned()
+        .ok_or_else(|| format!("pluginId '{}' is not registered", plugin_id))
+}
+
+fn validate_account_input_for_plugin(
+    plugin: &plugin_engine::manifest::LoadedPlugin,
+    auth_strategy_id: Option<String>,
+) -> Result<String, String> {
+    let auth = plugin
+        .manifest
+        .auth
+        .as_ref()
+        .ok_or_else(|| format!("{} does not support accounts", plugin.manifest.name))?;
+    let strategy_id = auth_strategy_id
+        .and_then(|value| {
+            let trimmed = value.trim().to_string();
+            (!trimmed.is_empty()).then_some(trimmed)
+        })
+        .or_else(|| auth.default_strategy_id.clone())
+        .or_else(|| auth.strategies.first().map(|strategy| strategy.id.clone()))
+        .ok_or_else(|| format!("{} has no auth strategies", plugin.manifest.name))?;
+    if !auth
+        .strategies
+        .iter()
+        .any(|strategy| strategy.id == strategy_id)
+    {
+        return Err(format!(
+            "authStrategyId '{}' is not supported by pluginId '{}'",
+            strategy_id, plugin.manifest.id
+        ));
+    }
+    Ok(strategy_id)
+}
+
+#[tauri::command]
+fn list_accounts(
+    store: tauri::State<'_, account_store::AccountStore>,
+) -> Result<Vec<models::AccountRecord>, String> {
+    store.list_accounts().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn create_account(
+    state: tauri::State<'_, Mutex<AppState>>,
+    store: tauri::State<'_, account_store::AccountStore>,
+    input: models::CreateAccountInput,
+) -> Result<models::AccountRecord, String> {
+    let plugin = find_loaded_plugin(&state, &input.plugin_id)?;
+    let auth_strategy_id = validate_account_input_for_plugin(&plugin, input.auth_strategy_id)?;
+    store
+        .create_account(models::CreateAccountInput {
+            plugin_id: plugin.manifest.id,
+            auth_strategy_id: Some(auth_strategy_id),
+            label: input.label,
+            settings: input.settings,
+        })
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn update_account(
+    state: tauri::State<'_, Mutex<AppState>>,
+    store: tauri::State<'_, account_store::AccountStore>,
+    account_id: String,
+    input: models::UpdateAccountInput,
+) -> Result<models::AccountRecord, String> {
+    if let Some(strategy) = input.auth_strategy_id.clone() {
+        let account = store
+            .get_account(&account_id)
+            .map_err(|err| err.to_string())?
+            .ok_or_else(|| "account not found".to_string())?;
+        let plugin = find_loaded_plugin(&state, &account.plugin_id)?;
+        validate_account_input_for_plugin(&plugin, Some(strategy))?;
+    }
+    store
+        .update_account(&account_id, input)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn delete_account(
+    store: tauri::State<'_, account_store::AccountStore>,
+    account_id: String,
+) -> Result<Option<models::AccountRecord>, String> {
+    store
+        .delete_account(&account_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn set_account_credentials(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, account_store::AccountStore>,
+    account_id: String,
+    credentials: serde_json::Value,
+) -> Result<(), String> {
+    secrets::set_account_credentials(&app, store.inner(), &account_id, &credentials)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn has_account_credentials(
+    store: tauri::State<'_, account_store::AccountStore>,
+    account_id: String,
+) -> Result<bool, String> {
+    secrets::has_account_credentials(store.inner(), &account_id).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn clear_account_credentials(
+    store: tauri::State<'_, account_store::AccountStore>,
+    account_id: String,
+) -> Result<(), String> {
+    secrets::clear_account_credentials(store.inner(), &account_id).map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn start_account_auth(
+    app: tauri::AppHandle,
+    auth_state: tauri::State<'_, auth::AuthState>,
+    state: tauri::State<'_, Mutex<AppState>>,
+    store: tauri::State<'_, account_store::AccountStore>,
+    plugin_id: String,
+    account_id: String,
+) -> Result<account_auth::AccountAuthStartResponse, String> {
+    let plugin = find_loaded_plugin(&state, &plugin_id)?;
+    account_auth::start_account_auth(app, auth_state, store, plugin, account_id)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn finish_account_auth(
+    app: tauri::AppHandle,
+    auth_state: tauri::State<'_, auth::AuthState>,
+    state: tauri::State<'_, Mutex<AppState>>,
+    store: tauri::State<'_, account_store::AccountStore>,
+    request_id: String,
+    timeout_ms: Option<u64>,
+) -> Result<account_auth::AccountAuthResult, String> {
+    let plugin_id = auth_state
+        .get(&request_id)
+        .map(|flow| flow.plugin_id.clone())
+        .ok_or_else(|| "auth request not found".to_string())?;
+    let plugin = find_loaded_plugin(&state, &plugin_id)?;
+    account_auth::finish_account_auth(app, auth_state, store, plugin, request_id, timeout_ms)
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn cancel_account_auth(auth_state: tauri::State<'_, auth::AuthState>, request_id: String) -> bool {
+    account_auth::cancel_account_auth(auth_state, request_id)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -473,6 +954,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_aptabase::Builder::new("A-US-6435241436").build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_keyring::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_nspanel::init())
         .plugin(
@@ -498,6 +980,16 @@ pub fn run() {
             open_devtools,
             start_probe_batch,
             list_plugins,
+            list_accounts,
+            create_account,
+            update_account,
+            delete_account,
+            set_account_credentials,
+            has_account_credentials,
+            clear_account_credentials,
+            start_account_auth,
+            finish_account_auth,
+            cancel_account_auth,
             get_log_path,
             update_global_shortcut
         ])
@@ -510,8 +1002,6 @@ pub fn run() {
                 app_nap::disable_app_nap();
                 webkit_config::disable_webview_suspension(app.handle());
             }
-
-            use tauri::Manager;
 
             let version = app.package_info().version.to_string();
             log::info!("OpenUsage v{} starting", version);
@@ -545,6 +1035,10 @@ pub fn run() {
                 app_data_dir: app_data_dir.clone(),
                 app_version: app.package_info().version.to_string(),
             }));
+            let account_store = account_store::AccountStore::load(app.handle())
+                .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
+            app.manage(account_store);
+            app.manage(auth::AuthState::new());
 
             local_http_api::init(&app_data_dir, known_plugin_ids);
             local_http_api::start_server();

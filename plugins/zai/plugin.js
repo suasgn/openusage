@@ -6,14 +6,15 @@
   const WEEK_MS = 7 * 24 * 60 * 60 * 1000
   const MONTH_MS = 30 * 24 * 60 * 60 * 1000
 
+  function readString(value) {
+    if (typeof value !== "string") return null
+    const trimmed = value.trim()
+    return trimmed ? trimmed : null
+  }
+
   function loadApiKey(ctx) {
-    const zai = ctx.host.env.get("ZAI_API_KEY")
-    if (typeof zai === "string" && zai.trim()) return zai.trim()
-
-    const glm = ctx.host.env.get("GLM_API_KEY")
-    if (typeof glm === "string" && glm.trim()) return glm.trim()
-
-    return null
+    const credentials = ctx.credentials && typeof ctx.credentials === "object" ? ctx.credentials : null
+    return readString(credentials && credentials.apiKey)
   }
 
   function fetchSubscription(ctx, apiKey) {
@@ -101,7 +102,7 @@
   function probe(ctx) {
     const apiKey = loadApiKey(ctx)
     if (!apiKey) {
-      throw "No ZAI_API_KEY found. Set up environment variable first."
+      throw "Z.ai API key missing. Add a Z.ai account in Settings."
     }
 
     const sub = fetchSubscription(ctx, apiKey)

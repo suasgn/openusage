@@ -9,26 +9,19 @@ type ScheduleTrayIconUpdate = (reason: "probe" | "settings" | "init", delayMs?: 
 type UseSettingsPluginActionsArgs = {
   pluginSettings: PluginSettings | null
   setPluginSettings: (value: PluginSettings | null) => void
-  setLoadingForPlugins: (ids: string[]) => void
-  setErrorForPlugins: (ids: string[], error: string) => void
-  startBatch: (pluginIds?: string[]) => Promise<string[] | undefined>
   scheduleTrayIconUpdate: ScheduleTrayIconUpdate
 }
 
 export function useSettingsPluginActions({
   pluginSettings,
   setPluginSettings,
-  setLoadingForPlugins,
-  setErrorForPlugins,
-  startBatch,
   scheduleTrayIconUpdate,
 }: UseSettingsPluginActionsArgs) {
   const handleReorder = useCallback((orderedIds: string[]) => {
     if (!pluginSettings) return
-    track("providers_reordered", { count: orderedIds.length })
-    // orderedIds may be a subset (e.g. nav-only, excluding disabled plugins).
-    // Re-insert any missing IDs from the previous order at their original
-    // relative positions so disabled plugins are not dropped.
+    track("plugins_reordered", { count: orderedIds.length })
+    // orderedIds can be a subset if the caller only reorders visible items.
+    // Re-insert missing IDs at their original relative positions so no plugin is dropped.
     const orderedSet = new Set(orderedIds)
     const missing = (pluginSettings.order ?? []).filter((id) => !orderedSet.has(id))
     const merged = [...orderedIds]
@@ -56,40 +49,25 @@ export function useSettingsPluginActions({
     })
   }, [pluginSettings, scheduleTrayIconUpdate, setPluginSettings])
 
-  const handleToggle = useCallback((id: string) => {
+  const handleToggle = useCallback((id: string, enabled: boolean) => {
     if (!pluginSettings) return
-    const wasDisabled = pluginSettings.disabled.includes(id)
-    track("provider_toggled", { provider_id: id, enabled: wasDisabled ? "true" : "false" })
-    const disabled = new Set(pluginSettings.disabled)
-
-    if (wasDisabled) {
-      disabled.delete(id)
-      setLoadingForPlugins([id])
-      startBatch([id]).catch((error) => {
-        console.error("Failed to start probe for enabled plugin:", error)
-        setErrorForPlugins([id], "Failed to start probe")
-      })
+    track("plugin_toggled", { plugin_id: id, enabled: enabled ? "true" : "false" })
+    const disabledSet = new Set(pluginSettings.disabled ?? [])
+    if (enabled) {
+      disabledSet.delete(id)
     } else {
-      disabled.add(id)
+      disabledSet.add(id)
     }
-
     const nextSettings: PluginSettings = {
       ...pluginSettings,
-      disabled: Array.from(disabled),
+      disabled: (pluginSettings.order ?? []).filter((pluginId) => disabledSet.has(pluginId)),
     }
     setPluginSettings(nextSettings)
     scheduleTrayIconUpdate("settings", TRAY_SETTINGS_DEBOUNCE_MS)
     void savePluginSettings(nextSettings).catch((error) => {
-      console.error("Failed to save plugin toggle:", error)
+      console.error("Failed to save plugin enabled state:", error)
     })
-  }, [
-    pluginSettings,
-    scheduleTrayIconUpdate,
-    setErrorForPlugins,
-    setLoadingForPlugins,
-    setPluginSettings,
-    startBatch,
-  ])
+  }, [pluginSettings, scheduleTrayIconUpdate, setPluginSettings])
 
   return {
     handleReorder,

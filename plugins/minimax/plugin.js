@@ -6,8 +6,6 @@
   ]
   const CN_PRIMARY_USAGE_URL = "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains"
   const CN_FALLBACK_USAGE_URLS = ["https://api.minimaxi.com/v1/coding_plan/remains"]
-  const GLOBAL_API_KEY_ENV_VARS = ["MINIMAX_API_KEY", "MINIMAX_API_TOKEN"]
-  const CN_API_KEY_ENV_VARS = ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY", "MINIMAX_API_TOKEN"]
   const CODING_PLAN_WINDOW_MS = 5 * 60 * 60 * 1000
   const CODING_PLAN_WINDOW_TOLERANCE_MS = 10 * 60 * 1000
   // GLOBAL plan tiers (based on prompt limits)
@@ -47,6 +45,24 @@
       if (value) return value
     }
     return null
+  }
+
+  function normalizeEndpoint(value) {
+    const raw = readString(value)
+    if (!raw) return "AUTO"
+    const upper = raw.toUpperCase()
+    if (upper === "CN" || upper === "GLOBAL" || upper === "AUTO") return upper
+    return "AUTO"
+  }
+
+  function loadCredentials(ctx) {
+    const credentials = ctx.credentials && typeof ctx.credentials === "object" ? ctx.credentials : null
+    const apiKey = readString(credentials && credentials.apiKey)
+    if (!apiKey) return null
+    return {
+      apiKey,
+      endpoint: normalizeEndpoint(credentials && credentials.endpoint),
+    }
   }
 
   function normalizePlanName(value) {
@@ -113,22 +129,10 @@
   }
 
   function loadApiKey(ctx, endpointSelection) {
-    const envVars = endpointSelection === "CN" ? CN_API_KEY_ENV_VARS : GLOBAL_API_KEY_ENV_VARS
-    for (let i = 0; i < envVars.length; i += 1) {
-      const name = envVars[i]
-      let value = null
-      try {
-        value = ctx.host.env.get(name)
-      } catch (e) {
-        ctx.host.log.warn("env read failed for " + name + ": " + String(e))
-      }
-      const key = readString(value)
-      if (key) {
-        ctx.host.log.info("api key loaded from " + name)
-        return { value: key, source: name }
-      }
-    }
-    return null
+    const credentials = loadCredentials(ctx)
+    if (!credentials) return null
+    if (credentials.endpoint !== "AUTO" && credentials.endpoint !== endpointSelection) return null
+    return { value: credentials.apiKey, source: "account" }
   }
 
   function getUsageUrls(endpointSelection) {
@@ -139,15 +143,10 @@
   }
 
   function endpointAttempts(ctx) {
-    // AUTO: if CN key exists, try CN first; otherwise try GLOBAL first.
-    let cnApiKeyValue = null
-    try {
-      cnApiKeyValue = ctx.host.env.get("MINIMAX_CN_API_KEY")
-    } catch (e) {
-      ctx.host.log.warn("env read failed for MINIMAX_CN_API_KEY: " + String(e))
-    }
-    if (readString(cnApiKeyValue)) return ["CN", "GLOBAL"]
-    return ["GLOBAL", "CN"]
+    const credentials = loadCredentials(ctx)
+    if (!credentials || credentials.endpoint === "AUTO") return ["GLOBAL", "CN"]
+    if (credentials.endpoint === "CN") return ["CN"]
+    return ["GLOBAL"]
   }
 
   function formatAuthError() {
@@ -359,7 +358,7 @@
 
     if (!parsed) {
       if (lastError) throw lastError
-      throw "MiniMax API key missing. Set MINIMAX_API_KEY or MINIMAX_CN_API_KEY."
+      throw "MiniMax API key missing. Add a MiniMax account in Settings."
     }
 
     // CN API returns model call counts (needs division by 15 for prompts)

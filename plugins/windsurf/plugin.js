@@ -7,18 +7,7 @@
   var DAY_MS = 24 * 60 * 60 * 1000
   var WEEK_MS = 7 * DAY_MS
 
-  var VARIANTS = [
-    {
-      marker: "windsurf",
-      ideName: "windsurf",
-      stateDb: "~/Library/Application Support/Windsurf/User/globalStorage/state.vscdb",
-    },
-    {
-      marker: "windsurf-next",
-      ideName: "windsurf-next",
-      stateDb: "~/Library/Application Support/Windsurf - Next/User/globalStorage/state.vscdb",
-    },
-  ]
+  var DEFAULT_VARIANT = { marker: "windsurf", ideName: "windsurf" }
 
   function readFiniteNumber(value) {
     if (typeof value === "number") return Number.isFinite(value) ? value : null
@@ -36,20 +25,18 @@
     return value
   }
 
-  function loadApiKey(ctx, variant) {
-    try {
-      var rows = ctx.host.sqlite.query(
-        variant.stateDb,
-        "SELECT value FROM ItemTable WHERE key = 'windsurfAuthStatus' LIMIT 1"
-      )
-      var parsed = ctx.util.tryParseJson(rows)
-      if (!parsed || !parsed.length || !parsed[0].value) return null
-      var auth = ctx.util.tryParseJson(parsed[0].value)
-      if (!auth || !auth.apiKey) return null
-      return auth.apiKey
-    } catch (e) {
-      ctx.host.log.warn("failed to read API key from " + variant.marker + ": " + String(e))
-      return null
+  function loadAccountAuth(ctx) {
+    var creds = ctx.credentials
+    if (!creds || typeof creds !== "object" || !creds.apiKey) return null
+    var ideName = typeof creds.ideName === "string" && creds.ideName.trim()
+      ? creds.ideName.trim()
+      : DEFAULT_VARIANT.ideName
+    return {
+      apiKey: String(creds.apiKey).trim(),
+      variant: {
+        marker: ideName,
+        ideName: ideName,
+      },
     }
   }
 
@@ -157,36 +144,21 @@
   }
 
   function probe(ctx) {
-    var sawApiKey = false
-    var sawAuthFailure = false
+    var auth = loadAccountAuth(ctx)
+    if (!auth || !auth.apiKey) throw LOGIN_HINT
 
-    for (var i = 0; i < VARIANTS.length; i++) {
-      var variant = VARIANTS[i]
-      var apiKey = loadApiKey(ctx, variant)
-      if (!apiKey) continue
-      sawApiKey = true
+    var data = callCloud(ctx, auth.apiKey, auth.variant)
+    if (data && data.__openusageAuthError) throw LOGIN_HINT
+    if (!data || !data.userStatus) throw QUOTA_HINT
 
-      var data = callCloud(ctx, apiKey, variant)
-      if (data && data.__openusageAuthError) {
-        sawAuthFailure = true
-        continue
+    try {
+      return buildOutput(ctx, data.userStatus)
+    } catch (e) {
+      if (e === QUOTA_HINT) {
+        ctx.host.log.warn("quota contract unavailable for " + auth.variant.marker)
       }
-      if (!data || !data.userStatus) continue
-
-      try {
-        return buildOutput(ctx, data.userStatus)
-      } catch (e) {
-        if (e === QUOTA_HINT) {
-          ctx.host.log.warn("quota contract unavailable for " + variant.marker)
-          continue
-        }
-        throw e
-      }
+      throw e
     }
-
-    if (sawAuthFailure) throw LOGIN_HINT
-    if (sawApiKey) throw QUOTA_HINT
-    throw LOGIN_HINT
   }
 
   globalThis.__openusage_plugin = { id: "windsurf", probe: probe }

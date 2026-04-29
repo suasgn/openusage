@@ -4,19 +4,6 @@
   const REST_GROUPS_ENDPOINT = REST_API_BASE + "/groups"
   const RATE_LIMIT_ENDPOINT = "https://www.perplexity.ai/rest/rate-limit/all"
 
-  const LOCAL_CACHE_DB_PATHS = [
-    "~/Library/Containers/ai.perplexity.mac/Data/Library/Caches/ai.perplexity.mac/Cache.db",
-    "~/Library/Caches/ai.perplexity.mac/Cache.db",
-  ]
-
-  // Only need request_object; receiver body is optional and can be malformed.
-  const LOCAL_SESSION_SQL =
-    "SELECT hex(b.request_object) AS requestHex " +
-    "FROM cfurl_cache_response r " +
-    "JOIN cfurl_cache_blob_data b ON b.entry_ID = r.entry_ID " +
-    "WHERE r.request_key = '" + LOCAL_USER_ENDPOINT + "' " +
-    "ORDER BY r.entry_ID DESC LIMIT 1;"
-
   const BEARER_HEX_PREFIX = "42656172657220" // "Bearer "
   const ASK_UA_HEX_PREFIX = "41736B2F" // Ask/
   const MACOS_DEVICE_ID_HEX_PREFIX = "6D61636F733A" // macos:
@@ -316,44 +303,33 @@
     return lines
   }
 
-  function queryLocalSessionFromCache(ctx, dbPath) {
-    let rows
-    try {
-      const json = ctx.host.sqlite.query(dbPath, LOCAL_SESSION_SQL)
-      rows = ctx.util.tryParseJson(json)
-    } catch (e) {
-      ctx.host.log.warn("local sqlite read failed (" + dbPath + "): " + String(e))
-      return null
-    }
-    if (!Array.isArray(rows) || rows.length === 0) return null
-
-    const row = rows[0] || {}
-    const requestHex = typeof row.requestHex === "string" ? row.requestHex : null
-    if (!requestHex) return null
-
-    const authToken = extractAuthToken(requestHex)
-    if (!authToken) return null
-
-    const userAgent = extractPrintableField(requestHex, ASK_UA_HEX_PREFIX)
-    const appVersion = askAppVersionFromUserAgent(userAgent)
-    const deviceId = extractPrintableField(requestHex, MACOS_DEVICE_ID_HEX_PREFIX)
-
-    return { authToken: authToken, userAgent: userAgent, appVersion: appVersion, deviceId: deviceId, sourcePath: dbPath }
+  function readString(value) {
+    return typeof value === "string" && value.trim() ? value.trim() : null
   }
 
   function loadLocalSession(ctx) {
-    for (let i = 0; i < LOCAL_CACHE_DB_PATHS.length; i += 1) {
-      const dbPath = LOCAL_CACHE_DB_PATHS[i]
-      try {
-        if (!ctx.host.fs.exists(dbPath)) continue
-      } catch (e) {
-        ctx.host.log.warn("local cache exists check failed (" + dbPath + "): " + String(e))
-        continue
-      }
-      const found = queryLocalSessionFromCache(ctx, dbPath)
-      if (found) return found
-    }
-    return null
+    const credentials = ctx.credentials
+    if (!credentials || typeof credentials !== "object") return null
+
+    const requestHex = readString(credentials.requestHex)
+    const authToken = readString(credentials.authToken || credentials.accessToken || credentials.token) || extractAuthToken(requestHex)
+    if (!authToken) return null
+
+    const userAgent = readString(credentials.userAgent) || extractPrintableField(requestHex, ASK_UA_HEX_PREFIX)
+    const appVersion = readString(credentials.appVersion) || askAppVersionFromUserAgent(userAgent)
+    const deviceId = readString(credentials.deviceId) || extractPrintableField(requestHex, MACOS_DEVICE_ID_HEX_PREFIX)
+
+    return { authToken: authToken, userAgent: userAgent, appVersion: appVersion, deviceId: deviceId }
+  }
+
+  function credentialsJson(session) {
+    return JSON.stringify({
+      type: "session",
+      authToken: session.authToken || "",
+      userAgent: session.userAgent || "",
+      appVersion: session.appVersion || "",
+      deviceId: session.deviceId || "",
+    })
   }
 
   function fetchRestState(ctx, session) {
@@ -380,7 +356,6 @@
   function probe(ctx) {
     const session = loadLocalSession(ctx)
     if (!session) throw "Not logged in. Sign in via Perplexity app."
-    if (session.sourcePath) ctx.host.log.info("using cache db: " + session.sourcePath)
 
     const restState = fetchRestState(ctx, session)
     if (!restState || !restState.group) throw "Unable to connect. Try again later."
@@ -415,7 +390,9 @@
       throw "Balance unavailable. Try again later."
     }
 
-    return plan ? { plan: plan, lines: lines } : { lines: lines }
+    const result = plan ? { plan: plan, lines: lines } : { lines: lines }
+    result.updatedCredentialsJson = credentialsJson(session)
+    return result
   }
 
   globalThis.__openusage_plugin = { id: "perplexity", probe: probe }

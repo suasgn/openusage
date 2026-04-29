@@ -6,6 +6,29 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#000000",
+  "auth": {
+    "defaultStrategyId": "apiKey",
+    "strategies": [
+      {
+        "id": "apiKey",
+        "label": "API Key",
+        "kind": "apiKey",
+        "fields": [{ "name": "apiKey", "label": "API Key", "secret": true, "required": true }],
+        "credentialTemplate": { "type": "apiKey", "apiKey": "" },
+        "importSources": [
+          {
+            "id": "opencode-auth-file",
+            "kind": "fileJson",
+            "paths": [{ "path": "~/.local/share/opencode/auth.json" }],
+            "json": {
+              "constants": { "type": "apiKey" },
+              "fields": [{ "target": "apiKey", "pointer": "/opencode-go/key", "required": true, "normalize": "trim" }]
+            }
+          }
+        ]
+      }
+    ]
+  },
   "links": [
     {
       "label": "Console",

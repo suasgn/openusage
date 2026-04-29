@@ -122,7 +122,7 @@ describe("useProbeEvents", () => {
     await act(() => result.current.startBatch(["a"]))
     const batchId = lastArgs.batchId
 
-    const output = { providerId: "a", displayName: "A", lines: [], iconUrl: "" } satisfies PluginOutput
+    const output = { pluginId: "a", displayName: "A", lines: [], iconUrl: "" } satisfies PluginOutput
     const resultListener = listeners.get("probe:result")
     const completeListener = listeners.get("probe:batch-complete")
     resultListener?.({ payload: { batchId, output } })
@@ -145,7 +145,7 @@ describe("useProbeEvents", () => {
     const { result } = renderHook(() => useProbeEvents({ onResult, onBatchComplete }))
 
     await act(() => result.current.startBatch(["a"]))
-    const output = { providerId: "a", displayName: "A", lines: [], iconUrl: "" } satisfies PluginOutput
+    const output = { pluginId: "a", displayName: "A", lines: [], iconUrl: "" } satisfies PluginOutput
     const resultListener = listeners.get("probe:result")
     const completeListener = listeners.get("probe:batch-complete")
     resultListener?.({ payload: { batchId: "other", output } })

@@ -7,7 +7,6 @@ const loadPlugin = async () => {
 }
 
 const OAUTH_TOKEN_KEY = "antigravityUnifiedStateSync.oauthToken"
-const OAUTH_TOKEN_SENTINEL = "oauthTokenInfoSentinelKey"
 
 // --- Fixtures ---
 
@@ -107,46 +106,32 @@ function setupLsMock(ctx, discovery, responseBody) {
   })
 }
 
+function setAccountTokens(ctx, opts) {
+  if (!opts) return
+  ctx.credentials = {
+    type: "oauth",
+    accessToken: opts.accessToken || "",
+    refreshToken: opts.refreshToken || "",
+    expiresAt: opts.expirySeconds ?? null,
+    projectId: opts.projectId || null,
+    managedProjectId: opts.managedProjectId || null,
+  }
+}
+
 function setupSqliteMock(ctx, oauthEnvelopeB64) {
+  if (oauthEnvelopeB64 && typeof oauthEnvelopeB64 === "object") {
+    setAccountTokens(ctx, oauthEnvelopeB64)
+  }
   ctx.host.sqlite.query.mockImplementation((db, sql) => {
     if (sql.includes(OAUTH_TOKEN_KEY) && oauthEnvelopeB64) {
-      return JSON.stringify([{ value: oauthEnvelopeB64 }])
+      return JSON.stringify([{ value: JSON.stringify(oauthEnvelopeB64) }])
     }
     return "[]"
   })
 }
 
-function encodeVarint(n) {
-  var bytes = ""
-  while (n > 0x7f) {
-    bytes += String.fromCharCode((n & 0x7f) | 0x80)
-    n = Math.floor(n / 128)
-  }
-  bytes += String.fromCharCode(n & 0x7f)
-  return bytes
-}
-
-function encodeField(fieldNum, wireType, data) {
-  var tag = encodeVarint(fieldNum * 8 + wireType)
-  if (wireType === 2) return tag + encodeVarint(data.length) + data
-  if (wireType === 0) return tag + encodeVarint(data)
-  return ""
-}
-
 function makeOAuthSentinelB64(ctx, opts) {
-  opts = opts || {}
-  var inner = ""
-  if (opts.accessToken) inner += encodeField(1, 2, opts.accessToken)
-  if (opts.refreshToken) inner += encodeField(3, 2, opts.refreshToken)
-  if (opts.expirySeconds !== null && opts.expirySeconds !== undefined) {
-    var tsMsg = encodeField(1, 0, opts.expirySeconds)
-    inner += encodeField(4, 2, tsMsg)
-  }
-  var innerB64 = ctx.base64.encode(inner)
-  var payload = encodeField(1, 2, innerB64)
-  var wrapper = encodeField(1, 2, OAUTH_TOKEN_SENTINEL) + encodeField(2, 2, payload)
-  var outer = encodeField(1, 2, wrapper)
-  return ctx.base64.encode(outer)
+  return opts || null
 }
 
 // --- Tests ---
@@ -157,14 +142,14 @@ describe("antigravity plugin", () => {
     vi.resetModules()
   })
 
-  it("throws when LS not found and no DB credentials", async () => {
+  it("throws when LS not found and no account credentials", async () => {
     const ctx = makeCtx()
     ctx.host.ls.discover.mockReturnValue(null)
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow("Start Antigravity and try again.")
   })
 
-  it("throws when no working port found and no DB credentials", async () => {
+  it("throws when no working port found and no account credentials", async () => {
     const ctx = makeCtx()
     ctx.host.ls.discover.mockReturnValue(makeDiscovery())
     ctx.host.http.request.mockImplementation(() => {
@@ -502,7 +487,7 @@ describe("antigravity plugin", () => {
     expect(labels).toContain("Claude")
   })
 
-  it("Cloud Code sends correct Authorization header with DB token", async () => {
+  it("Cloud Code sends correct Authorization header with account token", async () => {
     const ctx = makeCtx()
     const futureExpiry = Math.floor(Date.now() / 1000) + 3600
     setupSqliteMock(ctx, makeOAuthSentinelB64(ctx, { accessToken: "ya29.proto-token", refreshToken: "1//refresh", expirySeconds: futureExpiry }))
@@ -616,23 +601,26 @@ describe("antigravity plugin", () => {
     expect(ctx.host.http.request).not.toHaveBeenCalled()
   })
 
-  it("LS takes priority over Cloud Code when both available", async () => {
+  it("account credentials take priority over LS when both are available", async () => {
     const ctx = makeCtx()
     const futureExpiry = Math.floor(Date.now() / 1000) + 3600
     setupSqliteMock(ctx, makeOAuthSentinelB64(ctx, { accessToken: "ya29.test-token", refreshToken: "1//refresh", expirySeconds: futureExpiry }))
     const discovery = makeDiscovery()
-    const response = makeUserStatusResponse()
-    setupLsMock(ctx, discovery, response)
-    setupSqliteMock(ctx, makeOAuthSentinelB64(ctx, { accessToken: "ya29.test-token", refreshToken: "1//refresh", expirySeconds: futureExpiry }))
+    ctx.host.ls.discover.mockReturnValue(discovery)
+    ctx.host.http.request.mockImplementation((opts) => {
+      if (String(opts.url).includes("fetchAvailableModels")) {
+        return { status: 200, bodyText: JSON.stringify(makeCloudCodeResponse()) }
+      }
+      return { status: 200, bodyText: JSON.stringify(makeUserStatusResponse()) }
+    })
 
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
 
-    // No userTier in default fixture → falls back to planInfo.planName
-    expect(result.plan).toBe("Pro")
+    expect(result.plan).toBeNull()
     const calls = ctx.host.http.request.mock.calls.map((c) => String(c[0].url))
     const ccCalls = calls.filter((u) => u.includes("fetchAvailableModels"))
-    expect(ccCalls.length).toBe(0)
+    expect(ccCalls.length).toBeGreaterThan(0)
   })
 
   it("Cloud Code treats models without quotaInfo as depleted (100% used)", async () => {
@@ -672,7 +660,7 @@ describe("antigravity plugin", () => {
     expect(result.lines.find((l) => l.label === "Gemini Pro")).toBeTruthy()
   })
 
-  it("decodes protobuf tokens from SQLite", async () => {
+  it("uses imported account tokens", async () => {
     const ctx = makeCtx()
     const futureExpiry = Math.floor(Date.now() / 1000) + 3600
     const protoB64 = makeOAuthSentinelB64(ctx, { accessToken: "ya29.test-access", refreshToken: "1//refresh-token", expirySeconds: futureExpiry })
@@ -696,7 +684,7 @@ describe("antigravity plugin", () => {
     expect(result.lines.length).toBeGreaterThan(0)
   })
 
-  it("throws when unified oauth envelope is missing and no cache", async () => {
+  it("throws when account credentials are missing", async () => {
     const ctx = makeCtx()
     setupSqliteMock(ctx, null)
     ctx.host.ls.discover.mockReturnValue(null)
@@ -706,7 +694,7 @@ describe("antigravity plugin", () => {
     expect(ctx.host.http.request).not.toHaveBeenCalled()
   })
 
-  it("throws when unified oauth envelope is corrupt and no cache", async () => {
+  it("ignores corrupt imported credentials", async () => {
     const ctx = makeCtx()
     setupSqliteMock(ctx, "not-valid-protobuf!!!")
     ctx.host.ls.discover.mockReturnValue(null)
@@ -716,7 +704,7 @@ describe("antigravity plugin", () => {
     expect(ctx.host.http.request).not.toHaveBeenCalled()
   })
 
-  it("handles protobuf with no refresh_token or expiry", async () => {
+  it("handles account token with no refresh token or expiry", async () => {
     const ctx = makeCtx()
     const protoB64 = makeOAuthSentinelB64(ctx, { accessToken: "ya29.access-only", refreshToken: null, expirySeconds: null })
     setupSqliteMock(ctx, protoB64)
@@ -794,52 +782,12 @@ describe("antigravity plugin", () => {
     expect(() => plugin.probe(ctx)).toThrow("Start Antigravity and try again.")
   })
 
-  it("tries DB token first, then cached on auth failure", async () => {
-    const ctx = makeCtx()
-    const futureExpiry = Math.floor(Date.now() / 1000) + 3600
-    const protoB64 = makeOAuthSentinelB64(ctx, { accessToken: "ya29.proto-first", refreshToken: "1//refresh", expirySeconds: futureExpiry })
-    setupSqliteMock(ctx, protoB64)
-    ctx.host.ls.discover.mockReturnValue(null)
-
-    const cachePath = ctx.app.pluginDataDir + "/auth.json"
-    ctx.host.fs.writeText(cachePath, JSON.stringify({
-      accessToken: "ya29.cached",
-      expiresAtMs: Date.now() + 3600000,
-    }))
-
-    const capturedTokens = []
-    ctx.host.http.request.mockImplementation((opts) => {
-      const url = String(opts.url)
-      if (url.includes("fetchAvailableModels")) {
-        capturedTokens.push(opts.headers.Authorization)
-        if (opts.headers.Authorization === "Bearer ya29.proto-first") {
-          return { status: 401, bodyText: '{"error":"unauthorized"}' }
-        }
-        return { status: 200, bodyText: JSON.stringify(makeCloudCodeResponse()) }
-      }
-      return { status: 500, bodyText: "" }
-    })
-
-    const plugin = await loadPlugin()
-    const result = plugin.probe(ctx)
-
-    expect(capturedTokens[0]).toBe("Bearer ya29.proto-first")
-    expect(capturedTokens[capturedTokens.length - 1]).toBe("Bearer ya29.cached")
-    expect(result.lines.length).toBeGreaterThan(0)
-  })
-
-  it("tries both tokens before refreshing", async () => {
+  it("refreshes account token after Cloud Code auth failure", async () => {
     const ctx = makeCtx()
     const futureExpiry = Math.floor(Date.now() / 1000) + 3600
     const protoB64 = makeOAuthSentinelB64(ctx, { accessToken: "ya29.both-fail", refreshToken: "1//refresh", expirySeconds: futureExpiry })
     setupSqliteMock(ctx, protoB64)
     ctx.host.ls.discover.mockReturnValue(null)
-
-    const cachePath = ctx.app.pluginDataDir + "/auth.json"
-    ctx.host.fs.writeText(cachePath, JSON.stringify({
-      accessToken: "ya29.cached-also-bad",
-      expiresAtMs: Date.now() + 3600000,
-    }))
 
     const capturedTokens = []
     let refreshCalled = false
@@ -864,23 +812,16 @@ describe("antigravity plugin", () => {
 
     expect(refreshCalled).toBe(true)
     expect(capturedTokens.filter((t) => t === "Bearer ya29.both-fail").length).toBeGreaterThan(0)
-    expect(capturedTokens.filter((t) => t === "Bearer ya29.cached-also-bad").length).toBeGreaterThan(0)
     expect(capturedTokens[capturedTokens.length - 1]).toBe("Bearer ya29.refreshed")
     expect(result.lines.length).toBeGreaterThan(0)
   })
 
-  it("deduplicates DB access token and identical cached token", async () => {
+  it("uses the account token once before refreshing", async () => {
     const ctx = makeCtx()
     const futureExpiry = Math.floor(Date.now() / 1000) + 3600
     const protoB64 = makeOAuthSentinelB64(ctx, { accessToken: "ya29.same-token", refreshToken: "1//refresh", expirySeconds: futureExpiry })
     setupSqliteMock(ctx, protoB64)
     ctx.host.ls.discover.mockReturnValue(null)
-
-    const cachePath = ctx.app.pluginDataDir + "/auth.json"
-    ctx.host.fs.writeText(cachePath, JSON.stringify({
-      accessToken: "ya29.same-token",
-      expiresAtMs: Date.now() + 3600000,
-    }))
 
     const capturedTokens = []
     ctx.host.http.request.mockImplementation((opts) => {
@@ -906,7 +847,7 @@ describe("antigravity plugin", () => {
     expect(result.lines.length).toBeGreaterThan(0)
   })
 
-  it("caches refreshed token to pluginDataDir", async () => {
+  it("returns updated account credentials after refresh", async () => {
     const ctx = makeCtx()
     const futureExpiry = Math.floor(Date.now() / 1000) + 3600
     const protoB64 = makeOAuthSentinelB64(ctx, { accessToken: "ya29.will-fail", refreshToken: "1//refresh", expirySeconds: futureExpiry })
@@ -928,42 +869,15 @@ describe("antigravity plugin", () => {
     })
 
     const plugin = await loadPlugin()
-    plugin.probe(ctx)
+    const result = plugin.probe(ctx)
 
-    const cachePath = ctx.app.pluginDataDir + "/auth.json"
-    expect(ctx.host.fs.writeText).toHaveBeenCalledWith(cachePath, expect.any(String))
-    const cached = JSON.parse(ctx.host.fs.writeText.mock.calls.find((c) => c[0] === cachePath)[1])
-    expect(cached.accessToken).toBe("ya29.refreshed")
-    expect(cached.expiresAtMs).toBeGreaterThan(Date.now())
+    expect(ctx.host.fs.writeText).not.toHaveBeenCalled()
+    const updated = JSON.parse(result.updatedCredentialsJson)
+    expect(updated.accessToken).toBe("ya29.refreshed")
+    expect(updated.refreshToken).toBe("1//refresh")
   })
 
-  it("uses cached token when no DB access token", async () => {
-    const ctx = makeCtx()
-    setupSqliteMock(ctx, null)
-    ctx.host.ls.discover.mockReturnValue(null)
-
-    const cachePath = ctx.app.pluginDataDir + "/auth.json"
-    ctx.host.fs.writeText(cachePath, JSON.stringify({
-      accessToken: "ya29.cached-token",
-      expiresAtMs: Date.now() + 3600000,
-    }))
-
-    const capturedTokens = []
-    ctx.host.http.request.mockImplementation((opts) => {
-      if (String(opts.url).includes("fetchAvailableModels")) {
-        capturedTokens.push(opts.headers.Authorization)
-        return { status: 200, bodyText: JSON.stringify(makeCloudCodeResponse()) }
-      }
-      return { status: 500, bodyText: "" }
-    })
-
-    const plugin = await loadPlugin()
-    plugin.probe(ctx)
-
-    expect(capturedTokens[0]).toBe("Bearer ya29.cached-token")
-  })
-
-  it("throws when cached token is expired and no DB tokens", async () => {
+  it("ignores cached token when account credentials are missing", async () => {
     const ctx = makeCtx()
     setupSqliteMock(ctx, null)
     ctx.host.ls.discover.mockReturnValue(null)
@@ -979,7 +893,7 @@ describe("antigravity plugin", () => {
     expect(ctx.host.http.request).not.toHaveBeenCalled()
   })
 
-  it("skips expired DB access token and falls through to refresh", async () => {
+  it("skips expired account access token and falls through to refresh", async () => {
     const ctx = makeCtx()
     const pastExpiry = Math.floor(Date.now() / 1000) - 3600
     setupSqliteMock(ctx, makeOAuthSentinelB64(ctx, { accessToken: "ya29.expired-proto-token", refreshToken: "1//refresh", expirySeconds: pastExpiry }))
@@ -1001,12 +915,12 @@ describe("antigravity plugin", () => {
     const plugin = await loadPlugin()
     plugin.probe(ctx)
 
-    // Expired DB token must NOT be sent. The refreshed token is used instead.
+    // Expired account token must NOT be sent. The refreshed token is used instead.
     expect(capturedAuths).not.toContain("Bearer ya29.expired-proto-token")
     expect(capturedAuths[0]).toBe("Bearer ya29.refreshed")
   })
 
-  it("throws when cache file is corrupt and no DB tokens", async () => {
+  it("ignores corrupt cached token when account credentials are missing", async () => {
     const ctx = makeCtx()
     setupSqliteMock(ctx, null)
     ctx.host.ls.discover.mockReturnValue(null)
@@ -1210,23 +1124,25 @@ describe("antigravity plugin", () => {
     expect(labels).toEqual(["Gemini Pro", "Claude"])
   })
 
-  it("LS still takes priority over Cloud Code with DB tokens (no regression)", async () => {
+  it("account credentials still take priority over LS after import", async () => {
     const ctx = makeCtx()
     const futureExpiry = Math.floor(Date.now() / 1000) + 3600
     const protoB64 = makeOAuthSentinelB64(ctx, { accessToken: "ya29.proto-token", refreshToken: "1//refresh", expirySeconds: futureExpiry })
     setupSqliteMock(ctx, protoB64)
-    const discovery = makeDiscovery()
-    const response = makeUserStatusResponse()
-    setupLsMock(ctx, discovery, response)
-    setupSqliteMock(ctx, protoB64)
+    ctx.host.ls.discover.mockReturnValue(makeDiscovery())
+    ctx.host.http.request.mockImplementation((opts) => {
+      if (String(opts.url).includes("fetchAvailableModels")) {
+        return { status: 200, bodyText: JSON.stringify(makeCloudCodeResponse()) }
+      }
+      return { status: 200, bodyText: JSON.stringify(makeUserStatusResponse()) }
+    })
 
     const plugin = await loadPlugin()
     const result = plugin.probe(ctx)
 
-    // No userTier in default fixture → falls back to planInfo.planName
-    expect(result.plan).toBe("Pro")
+    expect(result.plan).toBeNull()
     const calls = ctx.host.http.request.mock.calls.map((c) => String(c[0].url))
-    expect(calls.filter((u) => u.includes("fetchAvailableModels")).length).toBe(0)
+    expect(calls.filter((u) => u.includes("fetchAvailableModels")).length).toBeGreaterThan(0)
     expect(calls.filter((u) => u.includes("oauth2.googleapis.com")).length).toBe(0)
   })
 
@@ -1341,7 +1257,7 @@ describe("antigravity plugin", () => {
 
   // --- Regression tests for unified-schema bug fixes ---
 
-  it("refresh-token-only state (no access token, no cache) refreshes and succeeds", async () => {
+  it("refresh-token-only account state refreshes and succeeds", async () => {
     const ctx = makeCtx()
     setupSqliteMock(ctx, makeOAuthSentinelB64(ctx, { accessToken: null, refreshToken: "1//only-refresh", expirySeconds: null }))
     ctx.host.ls.discover.mockReturnValue(null)
@@ -1404,17 +1320,11 @@ describe("antigravity plugin", () => {
     expect(ccCallTokens).toEqual(["Bearer ya29.new"])
   })
 
-  it("DB access token equals cached token: Cloud Code is called exactly once", async () => {
+  it("valid account token calls Cloud Code exactly once", async () => {
     const ctx = makeCtx()
     const futureExpiry = Math.floor(Date.now() / 1000) + 3600
     setupSqliteMock(ctx, makeOAuthSentinelB64(ctx, { accessToken: "ya29.shared", refreshToken: "1//refresh", expirySeconds: futureExpiry }))
     ctx.host.ls.discover.mockReturnValue(null)
-
-    const cachePath = ctx.app.pluginDataDir + "/auth.json"
-    ctx.host.fs.writeText(cachePath, JSON.stringify({
-      accessToken: "ya29.shared",
-      expiresAtMs: Date.now() + 3600000,
-    }))
 
     let ccCalls = 0
     ctx.host.http.request.mockImplementation((opts) => {
@@ -1460,12 +1370,6 @@ describe("antigravity plugin", () => {
     const futureExpiry = Math.floor(Date.now() / 1000) + 3600
     setupSqliteMock(ctx, makeOAuthSentinelB64(ctx, { accessToken: "ya29.valid", refreshToken: "1//refresh", expirySeconds: futureExpiry }))
     ctx.host.ls.discover.mockReturnValue(null)
-
-    const cachePath = ctx.app.pluginDataDir + "/auth.json"
-    ctx.host.fs.writeText(cachePath, JSON.stringify({
-      accessToken: "ya29.cached",
-      expiresAtMs: Date.now() + 3600000,
-    }))
 
     let refreshCalls = 0
     ctx.host.http.request.mockImplementation((opts) => {

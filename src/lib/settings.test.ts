@@ -10,6 +10,7 @@ import {
   DEFAULT_THEME_MODE,
   arePluginSettingsEqual,
   getEnabledPluginIds,
+  loadAccountOrderByPlugin,
   loadAutoUpdateInterval,
   loadDisplayMode,
   loadGlobalShortcut,
@@ -21,6 +22,7 @@ import {
   loadThemeMode,
   normalizePluginSettings,
   saveAutoUpdateInterval,
+  saveAccountOrderByPlugin,
   saveDisplayMode,
   saveGlobalShortcut,
   saveMenubarIconStyle,
@@ -74,12 +76,12 @@ describe("settings", () => {
   })
 
   it("saves settings", async () => {
-    const settings = { order: ["a"], disabled: ["b"] }
+    const settings = { order: ["a"], disabled: [] }
     await savePluginSettings(settings)
     await expect(loadPluginSettings()).resolves.toEqual(settings)
   })
 
-  it("normalizes order + disabled against known plugins", () => {
+  it("normalizes order and preserves known disabled plugins", () => {
     const plugins: PluginMeta[] = [
       { id: "a", name: "A", iconUrl: "", lines: [] },
       { id: "b", name: "B", iconUrl: "", lines: [] },
@@ -91,7 +93,7 @@ describe("settings", () => {
     expect(normalized).toEqual({ order: ["b", "a"], disabled: ["a"] })
   })
 
-  it("auto-disables new non-default plugins", () => {
+  it("adds new plugins to order without disabling them", () => {
     const plugins: PluginMeta[] = [
       { id: "claude", name: "Claude", iconUrl: "", lines: [], primaryCandidates: [] },
       { id: "copilot", name: "Copilot", iconUrl: "", lines: [], primaryCandidates: [] },
@@ -99,7 +101,7 @@ describe("settings", () => {
     ]
     const result = normalizePluginSettings({ order: [], disabled: [] }, plugins)
     expect(result.order).toEqual(["claude", "copilot", "windsurf"])
-    expect(result.disabled).toEqual(["copilot", "windsurf"])
+    expect(result.disabled).toEqual([])
   })
 
   it("compares settings equality", () => {
@@ -112,6 +114,24 @@ describe("settings", () => {
 
   it("returns enabled plugin ids", () => {
     expect(getEnabledPluginIds({ order: ["a", "b"], disabled: ["b"] })).toEqual(["a"])
+  })
+
+  it("loads sanitized account order by plugin", async () => {
+    storeState.set("accountOrderByPlugin", {
+      a: ["one", "", " two "],
+      b: "nope",
+      c: [3, "three"],
+    })
+
+    await expect(loadAccountOrderByPlugin()).resolves.toEqual({
+      a: ["one", "two"],
+      c: ["three"],
+    })
+  })
+
+  it("saves account order by plugin", async () => {
+    await saveAccountOrderByPlugin({ a: ["one", "two"] })
+    await expect(loadAccountOrderByPlugin()).resolves.toEqual({ a: ["one", "two"] })
   })
 
   it("loads default auto-update interval when missing", async () => {

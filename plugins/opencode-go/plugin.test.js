@@ -2,20 +2,13 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeCtx } from "../test-helpers.js";
 
-const AUTH_PATH = "~/.local/share/opencode/auth.json";
-
 const loadPlugin = async () => {
   await import("./plugin.js");
   return globalThis.__openusage_plugin;
 };
 
 function setAuth(ctx, value = "go-key") {
-  ctx.host.fs.writeText(
-    AUTH_PATH,
-    JSON.stringify({
-      "opencode-go": { type: "api-key", key: value },
-    }),
-  );
+  ctx.credentials = { type: "apiKey", apiKey: value };
 }
 
 function setHistoryQuery(ctx, rows, options = {}) {

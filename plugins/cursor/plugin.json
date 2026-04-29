@@ -6,6 +6,50 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#000000",
+  "auth": {
+    "defaultStrategyId": "oauth",
+    "strategies": [
+      {
+        "id": "oauth",
+        "label": "OAuth",
+        "kind": "json",
+        "fields": [
+          { "name": "accessToken", "label": "Access Token", "secret": true },
+          { "name": "refreshToken", "label": "Refresh Token", "secret": true }
+        ],
+        "credentialTemplate": { "type": "oauth", "accessToken": "", "refreshToken": "" },
+        "importSources": [
+          {
+            "id": "cursor-state-db",
+            "kind": "sqliteJson",
+            "dbPath": "~/Library/Application Support/Cursor/User/globalStorage/state.vscdb",
+            "query": "SELECT * FROM (SELECT (SELECT value FROM ItemTable WHERE key = 'cursorAuth/accessToken' LIMIT 1) AS accessToken, (SELECT value FROM ItemTable WHERE key = 'cursorAuth/refreshToken' LIMIT 1) AS refreshToken, (SELECT value FROM ItemTable WHERE key = 'cursorAuth/stripeMembershipType' LIMIT 1) AS membershipType) WHERE accessToken IS NOT NULL OR refreshToken IS NOT NULL",
+            "valuePointer": "/0",
+            "json": {
+              "constants": { "type": "oauth", "source": "sqlite" },
+              "fields": [
+                { "target": "accessToken", "pointer": "/accessToken", "normalize": "trim" },
+                { "target": "refreshToken", "pointer": "/refreshToken", "normalize": "trim" },
+                { "target": "membershipType", "pointer": "/membershipType", "normalize": "trim" }
+              ]
+            }
+          },
+          {
+            "id": "cursor-keychain",
+            "kind": "keychainText",
+            "services": [
+              { "service": "cursor-access-token", "target": "accessToken" },
+              { "service": "cursor-refresh-token", "target": "refreshToken" }
+            ],
+            "text": {
+              "target": "accessToken",
+              "constants": { "type": "oauth", "source": "keychain" }
+            }
+          }
+        ]
+      }
+    ]
+  },
   "links": [
     { "label": "Status", "url": "https://status.cursor.com/" },
     { "label": "Dashboard", "url": "https://www.cursor.com/dashboard" }

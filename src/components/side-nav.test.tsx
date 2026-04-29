@@ -53,6 +53,21 @@ describe("SideNav", () => {
     expect(icon).toHaveStyle({ backgroundColor: "#ff0000" })
   })
 
+  it("lets plugins fill available height and pins utility actions to the bottom", () => {
+    const onViewChange = vi.fn()
+    const { container } = render(
+      <SideNav
+        activeView="home"
+        onViewChange={onViewChange}
+        plugins={[{ id: "p1", name: "Plugin 1", iconUrl: "icon.svg" }]}
+      />
+    )
+
+    expect(container.querySelector("nav")).toHaveClass("h-full", "min-h-0")
+    expect(container.querySelector(".overflow-y-auto")).toHaveClass("flex-1", "min-h-0")
+    expect(screen.getByRole("button", { name: "Settings" }).parentElement).toHaveClass("mt-auto")
+  })
+
   it("falls back to currentColor (light) or white (dark) for low-contrast brand colors", () => {
     const onViewChange = vi.fn()
 

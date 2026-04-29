@@ -6,6 +6,69 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#74AA9C",
+  "auth": {
+    "defaultStrategyId": "oauth",
+    "strategies": [
+      {
+        "id": "oauth",
+        "label": "OAuth",
+        "kind": "oauthPkce",
+        "importSources": [
+          {
+            "id": "auth-file",
+            "kind": "fileJson",
+            "paths": [
+              { "env": "CODEX_HOME", "suffix": "/auth.json" },
+              { "path": "~/.config/codex/auth.json" },
+              { "path": "~/.codex/auth.json" }
+            ],
+            "json": {
+              "constants": { "type": "oauth" },
+              "fields": [
+                { "target": "accessToken", "pointer": "/tokens/access_token", "required": true, "normalize": "trim" },
+                { "target": "refreshToken", "pointer": "/tokens/refresh_token", "normalize": "trim" },
+                { "target": "idToken", "pointer": "/tokens/id_token", "normalize": "trim" },
+                { "target": "accountId", "pointer": "/tokens/account_id", "normalize": "trim" },
+                { "target": "expiresAt", "pointer": "/tokens/expires_at", "normalize": "epochSeconds" },
+                { "target": "lastRefresh", "pointer": "/last_refresh", "normalize": "trim" }
+              ]
+            }
+          },
+          {
+            "id": "keychain",
+            "kind": "keychainJson",
+            "services": [{ "service": "Codex Auth" }],
+            "json": {
+              "constants": { "type": "oauth" },
+              "fields": [
+                { "target": "accessToken", "pointer": "/tokens/access_token", "required": true, "normalize": "trim" },
+                { "target": "refreshToken", "pointer": "/tokens/refresh_token", "normalize": "trim" },
+                { "target": "idToken", "pointer": "/tokens/id_token", "normalize": "trim" },
+                { "target": "accountId", "pointer": "/tokens/account_id", "normalize": "trim" },
+                { "target": "expiresAt", "pointer": "/tokens/expires_at", "normalize": "epochSeconds" },
+                { "target": "lastRefresh", "pointer": "/last_refresh", "normalize": "trim" }
+              ]
+            }
+          }
+        ],
+        "oauth": {
+          "authorizeUrl": "https://auth.openai.com/oauth/authorize",
+          "tokenUrl": "https://auth.openai.com/oauth/token",
+          "clientId": "app_EMoamEEZ73f0CkXaXp7hrann",
+          "scopes": ["openid", "profile", "email", "offline_access"],
+          "redirectHost": "localhost",
+          "callbackPath": "/auth/callback",
+          "callbackPort": 1455,
+          "authorizeParams": {
+            "id_token_add_organizations": "true",
+            "codex_cli_simplified_flow": "true",
+            "originator": "codex_cli_rs"
+          },
+          "tokenRequest": "form"
+        }
+      }
+    ]
+  },
   "links": [
     { "label": "Status", "url": "https://status.openai.com/" },
     { "label": "Usage dashboard", "url": "https://platform.openai.com/usage" }

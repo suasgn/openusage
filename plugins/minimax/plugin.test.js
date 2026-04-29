@@ -13,9 +13,22 @@ const loadPlugin = async () => {
 }
 
 function setEnv(ctx, envValues) {
-  ctx.host.env.get.mockImplementation((name) =>
-    Object.prototype.hasOwnProperty.call(envValues, name) ? envValues[name] : null
-  )
+  const cnKey = envValues.MINIMAX_CN_API_KEY && String(envValues.MINIMAX_CN_API_KEY).trim()
+  const globalKey = envValues.MINIMAX_API_KEY && String(envValues.MINIMAX_API_KEY).trim()
+  const tokenKey = envValues.MINIMAX_API_TOKEN && String(envValues.MINIMAX_API_TOKEN).trim()
+  if (cnKey) {
+    ctx.credentials = { apiKey: cnKey, endpoint: "CN" }
+    return
+  }
+  if (globalKey || tokenKey) {
+    ctx.credentials = { apiKey: globalKey || tokenKey, endpoint: "GLOBAL" }
+    return
+  }
+  ctx.credentials = null
+}
+
+function setCredentials(ctx, apiKey, endpoint = "GLOBAL") {
+  ctx.credentials = { apiKey, endpoint }
 }
 
 function successPayload(overrides) {
@@ -51,7 +64,7 @@ describe("minimax plugin", () => {
     setEnv(ctx, {})
     const plugin = await loadPlugin()
     expect(() => plugin.probe(ctx)).toThrow(
-      "MiniMax API key missing. Set MINIMAX_API_KEY or MINIMAX_CN_API_KEY."
+      "MiniMax API key missing. Add a MiniMax account in Settings."
     )
   })
 
@@ -169,7 +182,7 @@ describe("minimax plugin", () => {
 
   it("falls back to CN in AUTO mode when GLOBAL auth fails", async () => {
     const ctx = makeCtx()
-    setEnv(ctx, { MINIMAX_API_KEY: "global-key" })
+    setCredentials(ctx, "global-key", "AUTO")
     ctx.host.http.request.mockImplementation((req) => {
       if (req.url === PRIMARY_USAGE_URL) return { status: 401, headers: {}, bodyText: "" }
       if (req.url === FALLBACK_USAGE_URL) return { status: 401, headers: {}, bodyText: "" }
@@ -207,7 +220,7 @@ describe("minimax plugin", () => {
 
   it("preserves first non-auth error in AUTO mode when later CN retry is auth", async () => {
     const ctx = makeCtx()
-    setEnv(ctx, { MINIMAX_API_KEY: "global-key" })
+    setCredentials(ctx, "global-key", "AUTO")
     ctx.host.http.request.mockImplementation((req) => {
       if (req.url === PRIMARY_USAGE_URL) return { status: 500, headers: {}, bodyText: "{}" }
       if (req.url === FALLBACK_USAGE_URL) return { status: 500, headers: {}, bodyText: "{}" }
@@ -223,7 +236,7 @@ describe("minimax plugin", () => {
 
   it("preserves first auth error in AUTO mode when later CN retry is non-auth", async () => {
     const ctx = makeCtx()
-    setEnv(ctx, { MINIMAX_API_KEY: "global-key" })
+    setCredentials(ctx, "global-key", "AUTO")
     ctx.host.http.request.mockImplementation((req) => {
       if (req.url === PRIMARY_USAGE_URL) return { status: 401, headers: {}, bodyText: "" }
       if (req.url === FALLBACK_USAGE_URL) return { status: 401, headers: {}, bodyText: "" }
@@ -441,7 +454,7 @@ describe("minimax plugin", () => {
       message = String(e)
     }
     expect(message).toContain("Session expired")
-    expect(ctx.host.http.request.mock.calls.length).toBe(5)
+    expect(ctx.host.http.request.mock.calls.length).toBe(3)
   })
 
   it("falls back to secondary endpoint when primary fails", async () => {
@@ -678,8 +691,9 @@ describe("minimax plugin", () => {
     expect(() => plugin.probe(ctx)).toThrow("Could not parse usage data")
   })
 
-  it("continues when env getter throws and still uses fallback env var", async () => {
+  it("ignores host env failures when account credentials are configured", async () => {
     const ctx = makeCtx()
+    setCredentials(ctx, "fallback-token")
     ctx.host.env.get.mockImplementation((name) => {
       if (name === "MINIMAX_API_KEY") throw new Error("env unavailable")
       if (name === "MINIMAX_API_TOKEN") return "fallback-token"

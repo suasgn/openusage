@@ -6,6 +6,48 @@
   "entry": "plugin.js",
   "icon": "icon.svg",
   "brandColor": "#20808D",
+  "auth": {
+    "defaultStrategyId": "session",
+    "strategies": [
+      {
+        "id": "session",
+        "label": "App Session",
+        "kind": "json",
+        "fields": [
+          { "name": "requestHex", "label": "Cached Request", "secret": true },
+          { "name": "authToken", "label": "Auth Token", "secret": true },
+          { "name": "userAgent", "label": "User Agent" },
+          { "name": "deviceId", "label": "Device ID", "secret": true },
+          { "name": "appVersion", "label": "App Version" }
+        ],
+        "credentialTemplate": { "type": "session", "requestHex": "", "authToken": "", "userAgent": "", "deviceId": "", "appVersion": "" },
+        "importSources": [
+          {
+            "id": "primary-cache-db",
+            "kind": "sqliteJson",
+            "dbPath": "~/Library/Containers/ai.perplexity.mac/Data/Library/Caches/ai.perplexity.mac/Cache.db",
+            "query": "SELECT hex(b.request_object) AS requestHex FROM cfurl_cache_response r JOIN cfurl_cache_blob_data b ON b.entry_ID = r.entry_ID WHERE r.request_key = 'https://www.perplexity.ai/api/user' ORDER BY r.entry_ID DESC LIMIT 1",
+            "valuePointer": "/0",
+            "json": {
+              "constants": { "type": "session", "source": "primary-cache-db" },
+              "fields": [{ "target": "requestHex", "pointer": "/requestHex", "required": true, "normalize": "trim" }]
+            }
+          },
+          {
+            "id": "fallback-cache-db",
+            "kind": "sqliteJson",
+            "dbPath": "~/Library/Caches/ai.perplexity.mac/Cache.db",
+            "query": "SELECT hex(b.request_object) AS requestHex FROM cfurl_cache_response r JOIN cfurl_cache_blob_data b ON b.entry_ID = r.entry_ID WHERE r.request_key = 'https://www.perplexity.ai/api/user' ORDER BY r.entry_ID DESC LIMIT 1",
+            "valuePointer": "/0",
+            "json": {
+              "constants": { "type": "session", "source": "fallback-cache-db" },
+              "fields": [{ "target": "requestHex", "pointer": "/requestHex", "required": true, "normalize": "trim" }]
+            }
+          }
+        ]
+      }
+    ]
+  },
   "lines": [
     { "type": "progress", "label": "API credits", "scope": "overview", "primaryOrder": 1 },
     { "type": "text", "label": "Queries", "scope": "overview" },
