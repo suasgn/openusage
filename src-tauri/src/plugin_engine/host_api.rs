@@ -3049,7 +3049,7 @@ mod tests {
 
     #[test]
     fn redact_body_preserves_provider_usage_amount_fields() {
-        let body = r#"{"balance_infos":[{"total_balance":"50.00","granted_balance":"10.00","topped_up_balance":"40.00"}],"data":{"credits_remaining":25,"total_credits_consumed":75}}"#;
+        let body = r#"{"balance_infos":[{"total_balance":"50.00","granted_balance":"10.00","topped_up_balance":"40.00"}],"data":{"credits_remaining":25,"total_credits_consumed":75},"completion":{"models":{"mistral-large":{"input":[{"billing_metric":"mistral-large","billing_group":"input","value_paid":11121}]}}}}"#;
         let redacted = redact_body(body);
         assert!(
             redacted.contains("total_balance") && redacted.contains("50.00"),
@@ -3059,6 +3059,11 @@ mod tests {
         assert!(
             redacted.contains("credits_remaining") && redacted.contains("25"),
             "Kimi K2 credit amounts are usage data, not credentials: {}",
+            redacted
+        );
+        assert!(
+            redacted.contains("billing_metric") && redacted.contains("value_paid"),
+            "Mistral billing usage fields are usage data, not credentials: {}",
             redacted
         );
     }

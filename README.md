@@ -46,6 +46,7 @@ OpenBurn lives in your menu bar and shows you how much of your AI coding subscri
 - [**Kimi Code**](docs/providers/kimi.md) / session, weekly
 - [**Kimi K2**](docs/providers/kimi-k2.md) / credits, remaining
 - [**MiniMax**](docs/providers/minimax.md) / coding plan session
+- [**Mistral**](docs/providers/mistral.md) / monthly API billing usage
 - [**OpenCode**](docs/providers/opencode.md) / session, weekly, monthly cost, Go usage
 - [**OpenRouter**](docs/providers/openrouter.md) / credits, key quota, rate limit
 - [**Warp**](docs/providers/warp.md) / credits, add-on credits

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "id": "mistral",
+  "name": "Mistral",
+  "version": "0.0.1",
+  "entry": "plugin.js",
+  "icon": "icon.svg",
+  "brandColor": "#FF500F",
+  "auth": {
+    "defaultStrategyId": "cookie",
+    "strategies": [
+      {
+        "id": "cookie",
+        "label": "Cookie Login",
+        "kind": "browserCookie",
+        "credentialTemplate": { "type": "cookie", "cookieHeader": "" },
+        "browserCookie": {
+          "loginUrl": "https://admin.mistral.ai/organization/usage",
+          "cookieUrls": [
+            "https://admin.mistral.ai/organization/usage",
+            "https://admin.mistral.ai/",
+            "https://auth.mistral.ai/"
+          ],
+          "completionUrlRegex": "https://admin\\.mistral\\.ai/organization/usage(?:[/#?]|$)"
+        }
+      },
+      {
+        "id": "manualCookie",
+        "label": "Manual Cookie",
+        "kind": "json",
+        "fields": [
+          { "name": "cookieHeader", "label": "Cookie Header", "fieldType": "textarea", "secret": true, "required": true }
+        ],
+        "credentialTemplate": { "type": "manualCookie", "cookieHeader": "" }
+      }
+    ]
+  },
+  "links": [
+    { "label": "Console", "url": "https://admin.mistral.ai/organization/usage" },
+    { "label": "Status", "url": "https://status.mistral.ai/" },
+    { "label": "Docs", "url": "https://docs.mistral.ai/" }
+  ],
+  "lines": [
+    { "type": "text", "label": "Cost", "scope": "overview" },
+    { "type": "text", "label": "Input Tokens", "scope": "overview" },
+    { "type": "text", "label": "Output Tokens", "scope": "overview" },
+    { "type": "text", "label": "Cached Tokens", "scope": "detail" },
+    { "type": "text", "label": "Models", "scope": "detail" },
+    { "type": "badge", "label": "Status", "scope": "detail" }
+  ]
+}
