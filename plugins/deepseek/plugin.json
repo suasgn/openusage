@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "deepseek",
+  "name": "DeepSeek",
+  "version": "0.0.1",
+  "entry": "plugin.js",
+  "icon": "icon.svg",
+  "brandColor": "#4D6BFE",
+  "auth": {
+    "defaultStrategyId": "apiKey",
+    "strategies": [
+      {
+        "id": "apiKey",
+        "label": "API Key",
+        "kind": "apiKey",
+        "fields": [
+          { "name": "apiKey", "label": "API Key", "fieldType": "password", "secret": true, "required": true }
+        ],
+        "credentialTemplate": { "apiKey": "" },
+        "importSources": [
+          {
+            "id": "env-api-key",
+            "kind": "env",
+            "envs": ["DEEPSEEK_API_KEY", "DEEPSEEK_KEY"],
+            "text": {
+              "target": "apiKey",
+              "constants": { "type": "apiKey" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "links": [
+    { "label": "Docs", "url": "https://api-docs.deepseek.com/" },
+    { "label": "Status", "url": "https://status.deepseek.com/" },
+    { "label": "Usage", "url": "https://platform.deepseek.com/usage" }
+  ],
+  "lines": [
+    { "type": "text", "label": "Balance", "scope": "overview" },
+    { "type": "text", "label": "Paid", "scope": "detail" },
+    { "type": "text", "label": "Granted", "scope": "detail" },
+    { "type": "badge", "label": "Status", "scope": "detail" }
+  ]
+}

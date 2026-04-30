@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
-const WHITELISTED_ENV_VARS: [&str; 16] = [
+const WHITELISTED_ENV_VARS: [&str; 21] = [
     "CODEX_HOME",
     "CLAUDE_CONFIG_DIR",
     "CLAUDE_CODE_OAUTH_TOKEN",
@@ -26,6 +26,11 @@ const WHITELISTED_ENV_VARS: [&str; 16] = [
     "MINIMAX_API_KEY",
     "MINIMAX_API_TOKEN",
     "MINIMAX_CN_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "DEEPSEEK_KEY",
+    "KIMI_K2_API_KEY",
+    "KIMI_API_KEY",
+    "KIMI_KEY",
     "SYNTHETIC_API_KEY",
     "PI_CODING_AGENT_DIR",
 ];
@@ -3040,6 +3045,22 @@ mod tests {
         let redacted = redact_body(body);
         assert!(!redacted.contains("or-key-hash-1234567890"));
         assert!(!redacted.contains("or-key-hash-abcdef1234"));
+    }
+
+    #[test]
+    fn redact_body_preserves_provider_usage_amount_fields() {
+        let body = r#"{"balance_infos":[{"total_balance":"50.00","granted_balance":"10.00","topped_up_balance":"40.00"}],"data":{"credits_remaining":25,"total_credits_consumed":75}}"#;
+        let redacted = redact_body(body);
+        assert!(
+            redacted.contains("total_balance") && redacted.contains("50.00"),
+            "DeepSeek balance amounts are usage data, not credentials: {}",
+            redacted
+        );
+        assert!(
+            redacted.contains("credits_remaining") && redacted.contains("25"),
+            "Kimi K2 credit amounts are usage data, not credentials: {}",
+            redacted
+        );
     }
 
     #[test]

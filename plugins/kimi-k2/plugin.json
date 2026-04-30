@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "kimi-k2",
+  "name": "Kimi K2",
+  "version": "0.0.1",
+  "entry": "plugin.js",
+  "icon": "icon.svg",
+  "brandColor": "#4C00FF",
+  "auth": {
+    "defaultStrategyId": "apiKey",
+    "strategies": [
+      {
+        "id": "apiKey",
+        "label": "API Key",
+        "kind": "apiKey",
+        "fields": [
+          { "name": "apiKey", "label": "API Key", "fieldType": "password", "secret": true, "required": true }
+        ],
+        "credentialTemplate": { "apiKey": "" },
+        "importSources": [
+          {
+            "id": "env-api-key",
+            "kind": "env",
+            "envs": ["KIMI_K2_API_KEY", "KIMI_API_KEY", "KIMI_KEY"],
+            "text": {
+              "target": "apiKey",
+              "constants": { "type": "apiKey" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "links": [
+    { "label": "Dashboard", "url": "https://kimi-k2.ai/my-credits" },
+    { "label": "API", "url": "https://kimi-k2.ai/" }
+  ],
+  "lines": [
+    { "type": "progress", "label": "Credits", "scope": "overview", "primaryOrder": 1 },
+    { "type": "text", "label": "Remaining", "scope": "detail" },
+    { "type": "text", "label": "Avg Tokens", "scope": "detail" },
+    { "type": "badge", "label": "Status", "scope": "detail" }
+  ]
+}

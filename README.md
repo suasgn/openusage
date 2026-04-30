@@ -37,12 +37,14 @@ OpenBurn lives in your menu bar and shows you how much of your AI coding subscri
 - [**Codex**](docs/providers/codex.md) / session, weekly, reviews, credits
 - [**Copilot**](docs/providers/copilot.md) / premium, chat, completions
 - [**Cursor**](docs/providers/cursor.md) / credits, total usage, auto usage, API usage, on-demand, CLI auth
+- [**DeepSeek**](docs/providers/deepseek.md) / API credit balance
 - [**Factory / Droid**](docs/providers/factory.md) / standard, premium tokens
 - [**Gemini**](docs/providers/gemini.md) / pro, flash, workspace/free/paid tier
 - [**JetBrains AI Assistant**](docs/providers/jetbrains-ai-assistant.md) / quota, remaining
 - [**Kilo**](docs/providers/kilo.md) / credits, Kilo Pass
 - [**Kiro**](docs/providers/kiro.md) / credits, bonus credits, overages
 - [**Kimi Code**](docs/providers/kimi.md) / session, weekly
+- [**Kimi K2**](docs/providers/kimi-k2.md) / credits, remaining
 - [**MiniMax**](docs/providers/minimax.md) / coding plan session
 - [**OpenCode**](docs/providers/opencode.md) / session, weekly, monthly cost, Go usage
 - [**OpenRouter**](docs/providers/openrouter.md) / credits, key quota, rate limit
