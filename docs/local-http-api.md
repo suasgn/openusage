@@ -32,13 +32,19 @@ Syncs one OpenBurn account into OpenCode's `auth.json`.
 
 ### `POST /v1/external-auth/opencode/rotate`
 
-Rotates OpenCode auth to the enabled account with the most cached usage left for a plugin.
+Rotates OpenCode auth to the enabled account with the most cached usage left.
 
 ```json
 { "pluginId": "codex" }
 ```
 
-Use `zai` for Z.ai. See [OpenCode Auth Rotation](opencode-auth-rotation.md).
+OpenCode provider/auth keys are also supported:
+
+```json
+{ "opencodeAuthKey": "zai-coding-plan" }
+```
+
+See [OpenCode Auth Rotation](opencode-auth-rotation.md).
 
 ### Unsupported methods
 

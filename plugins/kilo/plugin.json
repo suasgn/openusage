@@ -38,6 +38,22 @@
       }
     ]
   },
+  "externalAuth": {
+    "opencode": {
+      "authKey": "kilo",
+      "strategies": {
+        "apiKey": {
+          "type": "api",
+          "fields": {
+            "key": "/apiKey"
+          }
+        }
+      },
+      "rotation": {
+        "lineLabels": ["Credits", "Kilo Pass"]
+      }
+    }
+  },
   "links": [
     { "label": "Docs", "url": "https://kilocode.ai/docs/" },
     { "label": "Status", "url": "https://status.kilo.ai/" },

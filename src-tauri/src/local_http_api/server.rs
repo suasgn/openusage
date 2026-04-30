@@ -125,7 +125,31 @@ struct SyncOpenCodeAuthRequest {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RotateOpenCodeAuthRequest {
-    plugin_id: String,
+    plugin_id: Option<String>,
+    opencode_auth_key: Option<String>,
+}
+
+enum RotateOpenCodeAuthTarget {
+    PluginId(String),
+    OpenCodeAuthKey(String),
+}
+
+impl RotateOpenCodeAuthRequest {
+    fn target(self) -> std::result::Result<RotateOpenCodeAuthTarget, &'static str> {
+        if let Some(plugin_id) = non_empty_string(self.plugin_id) {
+            return Ok(RotateOpenCodeAuthTarget::PluginId(plugin_id));
+        }
+        if let Some(auth_key) = non_empty_string(self.opencode_auth_key) {
+            return Ok(RotateOpenCodeAuthTarget::OpenCodeAuthKey(auth_key));
+        }
+        Err("pluginId or opencodeAuthKey is required")
+    }
+}
+
+fn non_empty_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn handle_sync_opencode_auth(body: &str, app: Option<&tauri::AppHandle>) -> String {
@@ -151,9 +175,11 @@ fn handle_sync_opencode_auth(body: &str, app: Option<&tauri::AppHandle>) -> Stri
 }
 
 fn handle_rotate_opencode_auth(body: &str, app: Option<&tauri::AppHandle>) -> String {
-    let request = match serde_json::from_str::<RotateOpenCodeAuthRequest>(body) {
-        Ok(request) if !request.plugin_id.trim().is_empty() => request,
-        Ok(_) => return response_bad_request("pluginId is required"),
+    let target = match serde_json::from_str::<RotateOpenCodeAuthRequest>(body) {
+        Ok(request) => match request.target() {
+            Ok(target) => target,
+            Err(message) => return response_bad_request(message),
+        },
         Err(err) => return response_bad_request(format!("invalid JSON body: {err}")),
     };
     let Some(app) = app else {
@@ -161,12 +187,15 @@ fn handle_rotate_opencode_auth(body: &str, app: Option<&tauri::AppHandle>) -> St
     };
     let state = app.state::<Mutex<AppState>>();
     let store = app.state::<AccountStore>();
-    match external_auth::rotate_opencode_plugin(
-        app,
-        state.inner(),
-        store.inner(),
-        &request.plugin_id,
-    ) {
+    let result = match target {
+        RotateOpenCodeAuthTarget::PluginId(plugin_id) => {
+            external_auth::rotate_opencode_plugin(app, state.inner(), store.inner(), &plugin_id)
+        }
+        RotateOpenCodeAuthTarget::OpenCodeAuthKey(auth_key) => {
+            external_auth::rotate_opencode_auth_key(app, state.inner(), store.inner(), &auth_key)
+        }
+    };
+    match result {
         Ok(result) => response_json_value(200, "OK", &result),
         Err(err) => response_backend_error(err),
     }
@@ -339,6 +368,25 @@ mod tests {
         );
         assert!(resp.starts_with("HTTP/1.1 503"));
         assert!(resp.contains("app_unavailable"));
+    }
+
+    #[test]
+    fn route_opencode_rotate_accepts_opencode_auth_key() {
+        let resp = route(
+            "POST",
+            OPENCODE_ROTATE_PATH,
+            r#"{"opencodeAuthKey":"zai-coding-plan","modelId":"glm-4.6"}"#,
+            None,
+        );
+        assert!(resp.starts_with("HTTP/1.1 503"));
+        assert!(resp.contains("app_unavailable"));
+    }
+
+    #[test]
+    fn route_opencode_rotate_requires_target() {
+        let resp = route("POST", OPENCODE_ROTATE_PATH, r#"{"pluginId":" "}"#, None);
+        assert!(resp.starts_with("HTTP/1.1 400"));
+        assert!(resp.contains("pluginId or opencodeAuthKey is required"));
     }
 
     #[test]

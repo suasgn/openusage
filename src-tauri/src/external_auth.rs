@@ -114,6 +114,16 @@ pub fn rotate_opencode_plugin<R: Runtime>(
     )))
 }
 
+pub fn rotate_opencode_auth_key<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    state: &Mutex<AppState>,
+    store: &AccountStore,
+    auth_key: &str,
+) -> Result<ExternalAuthSyncResult> {
+    let plugin_id = plugin_id_for_opencode_auth_key(state, auth_key)?;
+    rotate_opencode_plugin(app, state, store, &plugin_id)
+}
+
 pub fn list_opencode_auth_account_matches<R: Runtime>(
     app: &tauri::AppHandle<R>,
     state: &Mutex<AppState>,
@@ -199,6 +209,45 @@ fn loaded_plugin_by_id(state: &Mutex<AppState>, plugin_id: &str) -> Result<Loade
         .find(|plugin| plugin.manifest.id == plugin_id)
         .cloned()
         .ok_or_else(|| BackendError::Plugin(format!("pluginId '{plugin_id}' is not registered")))
+}
+
+fn plugin_id_for_opencode_auth_key(state: &Mutex<AppState>, auth_key: &str) -> Result<String> {
+    let auth_key = normalize_opencode_auth_key(auth_key)?;
+    let locked = state
+        .lock()
+        .map_err(|_| BackendError::Plugin("plugin state poisoned".to_string()))?;
+
+    locked
+        .plugins
+        .iter()
+        .find_map(|plugin| {
+            let config = plugin
+                .manifest
+                .external_auth
+                .as_ref()
+                .and_then(|external| external.opencode.as_ref())?;
+            (normalize_auth_key_for_compare(&config.auth_key) == auth_key)
+                .then(|| plugin.manifest.id.clone())
+        })
+        .ok_or_else(|| {
+            BackendError::Plugin(format!(
+                "No OpenBurn plugin maps to OpenCode auth key '{auth_key}'"
+            ))
+        })
+}
+
+fn normalize_opencode_auth_key(auth_key: &str) -> Result<String> {
+    let auth_key = normalize_auth_key_for_compare(auth_key);
+    if auth_key.is_empty() {
+        return Err(BackendError::Validation(
+            "opencodeAuthKey is required".to_string(),
+        ));
+    }
+    Ok(auth_key)
+}
+
+fn normalize_auth_key_for_compare(auth_key: &str) -> String {
+    auth_key.trim().trim_end_matches('/').to_string()
 }
 
 fn opencode_config(plugin: &LoadedPlugin) -> Result<&OpenCodeExternalAuth> {
@@ -350,6 +399,11 @@ fn provider_error(message: impl Into<String>) -> BackendError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin_engine::manifest::{
+        ManifestLine, OpenCodeExternalAuthRotation, PluginExternalAuth, PluginManifest,
+    };
+    use std::collections::HashMap;
+    use std::path::PathBuf;
 
     #[test]
     fn extracts_account_scoped_metric_label() {
@@ -376,5 +430,67 @@ mod tests {
             Some("Weekly")
         );
         assert_eq!(metric_label_for_account("Weekly", &account, false), None);
+    }
+
+    fn loaded_plugin(id: &str, auth_key: &str) -> LoadedPlugin {
+        LoadedPlugin {
+            manifest: PluginManifest {
+                schema_version: 1,
+                id: id.to_string(),
+                name: id.to_string(),
+                version: "0.0.1".to_string(),
+                entry: "plugin.js".to_string(),
+                icon: "icon.svg".to_string(),
+                brand_color: None,
+                lines: vec![ManifestLine {
+                    line_type: "progress".to_string(),
+                    label: "Session".to_string(),
+                    scope: "overview".to_string(),
+                    primary_order: None,
+                }],
+                links: Vec::new(),
+                auth: None,
+                external_auth: Some(PluginExternalAuth {
+                    opencode: Some(OpenCodeExternalAuth {
+                        auth_key: auth_key.to_string(),
+                        strategies: HashMap::new(),
+                        rotation: Some(OpenCodeExternalAuthRotation {
+                            line_labels: vec!["Session".to_string()],
+                        }),
+                    }),
+                }),
+            },
+            plugin_dir: PathBuf::new(),
+            entry_script: String::new(),
+            icon_data_url: String::new(),
+        }
+    }
+
+    #[test]
+    fn resolves_plugin_id_from_opencode_auth_key() {
+        let state = Mutex::new(AppState {
+            plugins: vec![loaded_plugin("zai", "zai-coding-plan")],
+            app_data_dir: PathBuf::new(),
+            app_version: "test".to_string(),
+        });
+
+        assert_eq!(
+            plugin_id_for_opencode_auth_key(&state, "zai-coding-plan").unwrap(),
+            "zai"
+        );
+    }
+
+    #[test]
+    fn normalizes_opencode_auth_key_for_lookup() {
+        let state = Mutex::new(AppState {
+            plugins: vec![loaded_plugin("custom", "https://example.com/")],
+            app_data_dir: PathBuf::new(),
+            app_version: "test".to_string(),
+        });
+
+        assert_eq!(
+            plugin_id_for_opencode_auth_key(&state, " https://example.com/// ").unwrap(),
+            "custom"
+        );
     }
 }

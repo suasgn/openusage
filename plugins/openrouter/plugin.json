@@ -38,6 +38,22 @@
       }
     ]
   },
+  "externalAuth": {
+    "opencode": {
+      "authKey": "openrouter",
+      "strategies": {
+        "apiKey": {
+          "type": "api",
+          "fields": {
+            "key": "/apiKey"
+          }
+        }
+      },
+      "rotation": {
+        "lineLabels": ["Credits", "Key Quota"]
+      }
+    }
+  },
   "links": [
     { "label": "Docs", "url": "https://openrouter.ai/docs" },
     { "label": "Status", "url": "https://status.openrouter.ai/" },

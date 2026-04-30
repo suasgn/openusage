@@ -2,6 +2,11 @@
 
 Track all your AI coding subscriptions in one place from your menu bar. No digging through dashboards.
 
+
+> [!NOTE]
+>
+> OpenBurn is a fork of [OpenUsage](https://github.com/robinebers/openusage).
+
 ![OpenBurn Screenshot](screenshot.png)
 
 ## Download
@@ -15,11 +20,13 @@ The app auto-updates. Install once and you're set.
 OpenBurn lives in your menu bar and shows you how much of your AI coding subscriptions you've used. Progress bars, badges, and clear labels. No mental math required.
 
 - **One glance.** All your AI tools, one panel.
+- **Multi-account.** Add multiple accounts per provider and track each account's usage separately.
 - **Always up-to-date.** Refreshes automatically on a schedule you pick.
 - **Global shortcut.** Toggle the panel from anywhere with a customizable keyboard shortcut.
 - **Lightweight.** Opens instantly, stays out of your way.
 - **Provider-based.** New providers get added without updating the whole app.
 - **[Local HTTP API](docs/local-http-api.md).** Other apps can read your usage data from `127.0.0.1:6736`.
+- **[OpenCode CLI auth rotation](docs/opencode-auth-rotation.md).** Sync supported provider accounts into OpenCode's `auth.json`, see which account OpenCode is using, and rotate to the account with the most usage left.
 - **[Proxy support](docs/proxy.md).** Route provider HTTP requests through a SOCKS5 or HTTP proxy.
 
 ## Supported Providers

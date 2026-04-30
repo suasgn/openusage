@@ -56,6 +56,23 @@
       }
     ]
   },
+  "externalAuth": {
+    "opencode": {
+      "authKey": "github-copilot",
+      "strategies": {
+        "oauth": {
+          "type": "oauth",
+          "fields": {
+            "access": "/accessToken",
+            "refresh": "/accessToken"
+          }
+        }
+      },
+      "rotation": {
+        "lineLabels": ["Premium", "Chat"]
+      }
+    }
+  },
   "links": [
     { "label": "Docs", "url": "https://docs.github.com/en/copilot" },
     { "label": "Status", "url": "https://www.githubstatus.com/" },

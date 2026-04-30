@@ -41,6 +41,22 @@
       }
     ]
   },
+  "externalAuth": {
+    "opencode": {
+      "authKey": "minimax",
+      "strategies": {
+        "apiKey": {
+          "type": "api",
+          "fields": {
+            "key": "/apiKey"
+          }
+        }
+      },
+      "rotation": {
+        "lineLabels": ["Session"]
+      }
+    }
+  },
   "links": [
     { "label": "Docs", "url": "https://platform.minimax.io/docs/guides/models-intro" },
     { "label": "Status", "url": "https://status.minimax.io/" },

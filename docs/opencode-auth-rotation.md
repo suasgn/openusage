@@ -2,13 +2,13 @@
 
 OpenBurn can sync a saved account into OpenCode's `auth.json`, then rotate to the account with the most usage left.
 
-Supported now: `codex`, `zai`.
+Supported now: `codex`, `copilot`, `kilo`, `minimax`, `openrouter`, `zai`.
 
 ## Manual Sync
 
 In OpenBurn settings:
 
-1. Add multiple accounts for `codex` or `zai`.
+1. Add multiple accounts for a supported provider.
 2. Refresh usage once so OpenBurn has cached usage per account.
 3. Open an account and click **Sync OpenCode auth**.
 
@@ -25,10 +25,12 @@ curl -X POST http://127.0.0.1:6736/v1/external-auth/opencode/sync \
 ```bash
 curl -X POST http://127.0.0.1:6736/v1/external-auth/opencode/rotate \
   -H 'Content-Type: application/json' \
-  -d '{"pluginId":"codex"}'
+  -d '{"opencodeAuthKey":"openai"}'
 ```
 
-Use `{"pluginId":"zai"}` for Z.ai.
+Other OpenCode auth keys include `github-copilot`, `kilo`, `minimax`, `openrouter`, and `zai-coding-plan`.
+
+`pluginId` is still supported for direct OpenBurn plugin ids, for example `{"pluginId":"codex"}` or `{"pluginId":"zai"}`.
 
 ## OpenCode CLI Hook
 
@@ -37,19 +39,24 @@ Create `~/.config/opencode/plugins/openburn-auth-rotate.ts`:
 ```ts
 import type { Plugin } from "@opencode-ai/plugin"
 
-const PLUGIN_ID = "codex" // use "zai" for Z.ai
 const ROTATE_URL = "http://127.0.0.1:6736/v1/external-auth/opencode/rotate"
 const ROTATE_COOLDOWN_MS = 10_000
 const LIMIT_RE = /429|too many requests|rate.?limit|usage.?limit|limit has been reached|reached.*limit|quota|insufficient_quota|FreeUsageLimitError|out of (extra )?usage|credit/i
 const NON_USAGE_LIMIT_RE = /context|prompt.*too long|input.*too long|output length|max.*tokens|token limit|context_length|model_context_window/i
 
 type PluginClient = Parameters<Plugin>[0]["client"]
+type CurrentModel = { providerID: string; modelID: string }
 
 let rotating = false
 const lastRotateBySession = new Map<string, number>()
+const currentModelBySession = new Map<string, CurrentModel>()
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {}
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
 
 function errorText(error: unknown): string {
@@ -76,6 +83,9 @@ function isUsageLimit(text: string, status?: number): boolean {
 }
 
 async function rotate(client: PluginClient, sessionId: string) {
+  const current = currentModelBySession.get(sessionId)
+  if (!current) return
+
   const now = Date.now()
   const lastRotate = lastRotateBySession.get(sessionId) ?? 0
   if (rotating || now - lastRotate < ROTATE_COOLDOWN_MS) return
@@ -86,7 +96,10 @@ async function rotate(client: PluginClient, sessionId: string) {
     const response = await fetch(ROTATE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pluginId: PLUGIN_ID }),
+      body: JSON.stringify({
+        opencodeAuthKey: current.providerID,
+        modelId: current.modelID,
+      }),
     })
 
     const text = await response.text()
@@ -104,7 +117,7 @@ async function rotate(client: PluginClient, sessionId: string) {
     await client.tui.showToast({
       body: {
         variant: "success",
-        message: `OpenBurn rotated ${result.pluginId} to ${result.accountLabel}. Press Esc and resend if OpenCode is waiting to retry.`,
+        message: `OpenBurn rotated ${current.providerID} (${result.pluginId}) to ${result.accountLabel}. Press Esc and resend if OpenCode is waiting to retry.`,
       },
     })
   } finally {
@@ -113,6 +126,14 @@ async function rotate(client: PluginClient, sessionId: string) {
 }
 
 export const OpenBurnAuthRotate: Plugin = async ({ client }) => ({
+  "chat.params": async (input) => {
+    const model = input.model as { providerID?: string; id?: string; modelID?: string }
+    const providerID = stringValue(model.providerID)
+    const modelID = stringValue(model.id) ?? stringValue(model.modelID) ?? "unknown"
+    if (!providerID) return
+    currentModelBySession.set(input.sessionID, { providerID, modelID })
+  },
+
   event: async ({ event }) => {
     const evt = event as { type: string; properties?: Record<string, unknown> }
 

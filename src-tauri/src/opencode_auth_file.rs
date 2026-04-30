@@ -48,7 +48,7 @@ fn build_opencode_auth_payload(
         OpenCodeExternalAuthType::OAuth => {
             let access = required_string_field(strategy, credentials, "access")?;
             let refresh = required_string_field(strategy, credentials, "refresh")?;
-            let expires = required_number_field(strategy, credentials, "expires")?;
+            let expires = oauth_expires_number(strategy, credentials)?;
             let mut payload = serde_json::Map::new();
             payload.insert(
                 "type".to_string(),
@@ -184,6 +184,51 @@ fn required_number_field(
     })
 }
 
+fn optional_number_field(
+    strategy: &OpenCodeExternalAuthStrategy,
+    credentials: &serde_json::Value,
+    name: &str,
+) -> Result<Option<serde_json::Number>> {
+    let Some(value) = optional_field_value(strategy, credentials, name)? else {
+        return Ok(None);
+    };
+    Ok(number_from_value(value))
+}
+
+fn oauth_expires_number(
+    strategy: &OpenCodeExternalAuthStrategy,
+    credentials: &serde_json::Value,
+) -> Result<serde_json::Number> {
+    let number = if strategy
+        .fields
+        .get("expires")
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
+    {
+        required_number_field(strategy, credentials, "expires")?
+    } else {
+        optional_number_field(strategy, credentials, "expires")?.unwrap_or_else(|| 0.into())
+    };
+    expires_to_millis(number)
+}
+
+fn expires_to_millis(number: serde_json::Number) -> Result<serde_json::Number> {
+    let Some(value) = number.as_f64() else {
+        return Err(provider_error("OpenCode field 'expires' must be finite"));
+    };
+    if !value.is_finite() || value < 0.0 || value > i64::MAX as f64 {
+        return Err(provider_error("OpenCode field 'expires' must be finite"));
+    }
+
+    let millis = if value > 0.0 && value < 100_000_000_000.0 {
+        value * 1000.0
+    } else {
+        value
+    };
+
+    Ok(serde_json::Number::from(millis.floor() as i64))
+}
+
 fn number_from_value(value: &serde_json::Value) -> Option<serde_json::Number> {
     match value {
         serde_json::Value::Number(number) => Some(number.clone()),
@@ -313,8 +358,27 @@ mod tests {
         assert_eq!(payload["type"], "oauth");
         assert_eq!(payload["access"], "access");
         assert_eq!(payload["refresh"], "refresh");
-        assert_eq!(payload["expires"], 1770000000);
+        assert_eq!(payload["expires"], 1770000000000_i64);
         assert_eq!(payload["accountId"], "acct_123");
+    }
+
+    #[test]
+    fn builds_oauth_payload_with_default_zero_expiry() {
+        let strategy = OpenCodeExternalAuthStrategy {
+            auth_type: OpenCodeExternalAuthType::OAuth,
+            fields: HashMap::from([
+                ("access".to_string(), "/accessToken".to_string()),
+                ("refresh".to_string(), "/accessToken".to_string()),
+            ]),
+        };
+        let credentials = serde_json::json!({ "accessToken": "gho_token" });
+
+        let payload = build_opencode_auth_payload(&strategy, &credentials).unwrap();
+
+        assert_eq!(payload["type"], "oauth");
+        assert_eq!(payload["access"], "gho_token");
+        assert_eq!(payload["refresh"], "gho_token");
+        assert_eq!(payload["expires"], 0);
     }
 
     #[test]
